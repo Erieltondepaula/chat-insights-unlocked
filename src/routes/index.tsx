@@ -192,15 +192,10 @@ function Index() {
     return [
       { label: "Mensagens", value: analysis.totalMessages },
       { label: "Participantes", value: analysis.participants.length },
-      { label: "Demandas", value: analysis.demands.length },
-      {
-        label: "Mídias",
-        value:
-          analysis.mediaCount.image +
-          analysis.mediaCount.video +
-          analysis.mediaCount.audio +
-          analysis.mediaCount.document,
-      },
+      { label: "Demandas solicitadas", value: analysis.demandStats.total },
+      { label: "Pendentes", value: analysis.demandStats.pendentes },
+      { label: "Resolvidas", value: analysis.demandStats.resolvidas },
+      { label: "Taxa resolução", value: `${analysis.demandStats.taxaResolucao.toFixed(0)}%` },
     ];
   }, [analysis]);
 
