@@ -17,6 +17,18 @@ export type Demand = {
   status: "pendente" | "resolvido";
 };
 
+export type ClosureVerdict = {
+  windowStart: Date;
+  windowEnd: Date;
+  totalMessages: number;
+  activeParticipants: number;
+  openDemands: number;
+  resolvedDemands: number;
+  daysSinceLastMessage: number;
+  recommendation: "pode_encerrar" | "manter_aberto" | "avaliar_manual";
+  reasons: string[];
+};
+
 export type Analysis = {
   totalMessages: number;
   firstDate: Date | null;
@@ -25,10 +37,19 @@ export type Analysis = {
   participants: ParticipantStats[];
   mediaCount: { image: number; video: number; audio: number; document: number; sticker: number; gif: number };
   demands: Demand[];
+  demandStats: {
+    total: number;
+    pendentes: number;
+    resolvidas: number;
+    taxaResolucao: number;
+    tempoMedioResolucaoHoras: number | null;
+    resolvedoresTop: { name: string; count: number }[];
+  };
   dailySummary: { date: string; count: number; topics: string[] }[];
   topWords: { word: string; count: number }[];
   messages: Message[];
   systemEvents: { date: Date; content: string }[];
+  closureVerdict: ClosureVerdict | null;
 };
 
 export type ParticipantStats = {
@@ -288,6 +309,71 @@ export function analyze(messages: Message[]): Analysis {
   // Group creation
   const created = sys.find((s) => /criou o grupo|created group/i.test(s.content));
 
+  // Demand stats
+  const resolvidas = demands.filter((d) => d.status === "resolvido");
+  const pendentes = demands.filter((d) => d.status === "pendente");
+  const tempos = resolvidas
+    .filter((d) => d.resolvedAt)
+    .map((d) => (d.resolvedAt!.getTime() - d.date.getTime()) / 3_600_000);
+  const tempoMedio = tempos.length ? tempos.reduce((a, b) => a + b, 0) / tempos.length : null;
+  const resolverMap = new Map<string, number>();
+  for (const d of resolvidas) {
+    if (!d.resolvedBy) continue;
+    resolverMap.set(d.resolvedBy, (resolverMap.get(d.resolvedBy) ?? 0) + 1);
+  }
+  const resolvedoresTop = [...resolverMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+
+  // Closure verdict — últimas 2 semanas a partir de HOJE
+  const now = new Date();
+  const windowEnd = now;
+  const windowStart = new Date(now.getTime() - 14 * 86_400_000);
+  const inWindow = nonSys.filter((m) => m.date >= windowStart && m.date <= windowEnd);
+  const activeAuthors = new Set(inWindow.map((m) => m.author).filter(Boolean) as string[]);
+  const demandsInWindow = demands.filter((d) => d.date >= windowStart && d.date <= windowEnd);
+  const openInWindow = demandsInWindow.filter((d) => d.status === "pendente").length;
+  const resolvedInWindow = demandsInWindow.filter((d) => d.status === "resolvido").length;
+  const lastMsg = nonSys[nonSys.length - 1]?.date ?? null;
+  const daysSinceLast = lastMsg
+    ? Math.floor((now.getTime() - lastMsg.getTime()) / 86_400_000)
+    : 9999;
+
+  const reasons: string[] = [];
+  let recommendation: ClosureVerdict["recommendation"] = "avaliar_manual";
+  if (pendentes.length > 0) {
+    reasons.push(`Existem ${pendentes.length} demanda(s) pendente(s) sem resolução clara — manter aberto.`);
+    recommendation = "manter_aberto";
+  } else if (inWindow.length === 0 && daysSinceLast >= 14) {
+    reasons.push(`Sem nenhuma mensagem nas últimas 2 semanas (última há ${daysSinceLast} dias).`);
+    reasons.push("Nenhuma demanda pendente registrada.");
+    recommendation = "pode_encerrar";
+  } else if (inWindow.length < 5 && openInWindow === 0 && daysSinceLast >= 7) {
+    reasons.push(`Baixíssima atividade (${inWindow.length} mensagens em 14 dias) e nenhuma pendência.`);
+    reasons.push(`Última mensagem há ${daysSinceLast} dias.`);
+    recommendation = "pode_encerrar";
+  } else if (openInWindow > 0) {
+    reasons.push(`${openInWindow} demanda(s) aberta(s) na janela das últimas 2 semanas.`);
+    recommendation = "manter_aberto";
+  } else {
+    reasons.push(`${inWindow.length} mensagens nas últimas 2 semanas com ${activeAuthors.size} participante(s) ativo(s).`);
+    reasons.push(`${resolvedInWindow} demanda(s) resolvida(s) no período, ${openInWindow} pendente(s).`);
+    recommendation = inWindow.length < 20 && openInWindow === 0 ? "pode_encerrar" : "manter_aberto";
+  }
+
+  const closureVerdict: ClosureVerdict = {
+    windowStart,
+    windowEnd,
+    totalMessages: inWindow.length,
+    activeParticipants: activeAuthors.size,
+    openDemands: openInWindow,
+    resolvedDemands: resolvedInWindow,
+    daysSinceLastMessage: daysSinceLast,
+    recommendation,
+    reasons,
+  };
+
   return {
     totalMessages: messages.length,
     firstDate: messages[0]?.date ?? null,
@@ -296,9 +382,18 @@ export function analyze(messages: Message[]): Analysis {
     participants: [...pmap.values()].sort((a, b) => b.messageCount - a.messageCount),
     mediaCount,
     demands,
+    demandStats: {
+      total: demands.length,
+      pendentes: pendentes.length,
+      resolvidas: resolvidas.length,
+      taxaResolucao: demands.length ? (resolvidas.length / demands.length) * 100 : 0,
+      tempoMedioResolucaoHoras: tempoMedio,
+      resolvedoresTop,
+    },
     dailySummary,
     topWords: topWords(nonSys),
     messages,
     systemEvents: sys.map((s) => ({ date: s.date, content: s.content })),
+    closureVerdict,
   };
 }
