@@ -63,6 +63,7 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
   sectionTitle(doc, "Resumo Executivo", margin, y);
   y += 30;
   const top = a.participants[0];
+  const ds = a.demandStats;
   const summary = [
     `A conversa registrou ${a.totalMessages} mensagens entre ${a.participants.length} participantes${
       a.firstDate && a.lastDate
@@ -70,7 +71,10 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
         : ""
     }.`,
     top ? `O participante mais ativo foi ${top.name} com ${top.messageCount} mensagens (${top.percentage.toFixed(1)}%).` : "",
-    `Foram identificadas ${a.demands.length} demandas/solicitações, das quais ${a.demands.filter((d) => d.status === "resolvido").length} foram resolvidas e ${a.demands.filter((d) => d.status === "pendente").length} permanecem pendentes.`,
+    `Demandas solicitadas: ${ds.total} · Resolvidas: ${ds.resolvidas} · Pendentes: ${ds.pendentes} · Taxa de resolução: ${ds.taxaResolucao.toFixed(1)}%.`,
+    ds.tempoMedioResolucaoHoras !== null
+      ? `Tempo médio de resolução: ${ds.tempoMedioResolucaoHoras.toFixed(1)} horas.`
+      : "Tempo médio de resolução: não calculável (sem resoluções registradas).",
     `Mídias compartilhadas: ${a.mediaCount.image} imagens, ${a.mediaCount.video} vídeos, ${a.mediaCount.audio} áudios, ${a.mediaCount.document} documentos.`,
   ].filter(Boolean);
   doc.setFont("helvetica", "normal");
@@ -81,12 +85,47 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
     y += wrapped.length * 14 + 6;
   }
 
-  y += 10;
+  // KPIs em cards
+  y += 6;
+  const kpis = [
+    { label: "Solicitadas", value: ds.total },
+    { label: "Pendentes", value: ds.pendentes },
+    { label: "Resolvidas", value: ds.resolvidas },
+    { label: "Resolução %", value: `${ds.taxaResolucao.toFixed(0)}%` },
+  ];
+  const cardW = (pageW - margin * 2 - 18) / 4;
+  kpis.forEach((k, i) => {
+    const x = margin + i * (cardW + 6);
+    doc.setFillColor(240, 253, 244);
+    doc.setDrawColor(20, 83, 45);
+    doc.roundedRect(x, y, cardW, 56, 6, 6, "FD");
+    doc.setTextColor(20, 83, 45);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(String(k.value), x + 10, y + 28);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(60);
+    doc.text(k.label, x + 10, y + 46);
+  });
+  y += 72;
+
+  if (ds.resolvedoresTop.length) {
+    sectionTitle(doc, "Quem mais resolveu", margin, y);
+    autoTable(doc, {
+      startY: y + 14,
+      head: [["Resolvedor", "Demandas resolvidas"]],
+      body: ds.resolvedoresTop.map((r) => [r.name, r.count]),
+      headStyles: { fillColor: [20, 83, 45] },
+      margin: { left: margin, right: margin },
+    });
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 18;
+  }
+
   if (a.topWords.length) {
     sectionTitle(doc, "Principais Tópicos", margin, y);
-    y += 8;
     autoTable(doc, {
-      startY: y + 10,
+      startY: y + 14,
       head: [["Termo", "Ocorrências"]],
       body: a.topWords.map((w) => [w.word, w.count]),
       headStyles: { fillColor: [20, 83, 45] },
@@ -133,17 +172,18 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
   sectionTitle(doc, "Demandas e Resoluções", margin, margin);
   autoTable(doc, {
     startY: margin + 20,
-    head: [["Data", "Solicitante", "Mensagem", "Status", "Resolvido por"]],
+    head: [["Data abertura", "Solicitante", "Mensagem", "Status", "Resolvido por", "Quando resolveu"]],
     body: a.demands.map((d) => [
       fmtDate(d.date),
       d.requester,
       d.message,
       d.status,
       d.resolvedBy ?? "—",
+      d.resolvedAt ? fmtDate(d.resolvedAt) : "—",
     ]),
     headStyles: { fillColor: [20, 83, 45] },
     margin: { left: margin, right: margin },
-    columnStyles: { 2: { cellWidth: 220 } },
+    columnStyles: { 2: { cellWidth: 180 } },
     styles: { fontSize: 8, cellPadding: 4 },
   });
 
