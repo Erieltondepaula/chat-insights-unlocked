@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiV1AuditoriaRelatorioRouteImport } from './routes/api/v1/auditoria.relatorio'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1AuditoriaRelatorioRoute = ApiV1AuditoriaRelatorioRouteImport.update({
+  id: '/api/v1/auditoria/relatorio',
+  path: '/api/v1/auditoria/relatorio',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/v1/auditoria/relatorio': typeof ApiV1AuditoriaRelatorioRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/v1/auditoria/relatorio': typeof ApiV1AuditoriaRelatorioRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/v1/auditoria/relatorio': typeof ApiV1AuditoriaRelatorioRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/v1/auditoria/relatorio'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/v1/auditoria/relatorio'
+  id: '__root__' | '/' | '/api/v1/auditoria/relatorio'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiV1AuditoriaRelatorioRoute: typeof ApiV1AuditoriaRelatorioRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/auditoria/relatorio': {
+      id: '/api/v1/auditoria/relatorio'
+      path: '/api/v1/auditoria/relatorio'
+      fullPath: '/api/v1/auditoria/relatorio'
+      preLoaderRoute: typeof ApiV1AuditoriaRelatorioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiV1AuditoriaRelatorioRoute: ApiV1AuditoriaRelatorioRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

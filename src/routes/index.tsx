@@ -192,15 +192,10 @@ function Index() {
     return [
       { label: "Mensagens", value: analysis.totalMessages },
       { label: "Participantes", value: analysis.participants.length },
-      { label: "Demandas", value: analysis.demands.length },
-      {
-        label: "Mídias",
-        value:
-          analysis.mediaCount.image +
-          analysis.mediaCount.video +
-          analysis.mediaCount.audio +
-          analysis.mediaCount.document,
-      },
+      { label: "Demandas solicitadas", value: analysis.demandStats.total },
+      { label: "Pendentes", value: analysis.demandStats.pendentes },
+      { label: "Resolvidas", value: analysis.demandStats.resolvidas },
+      { label: "Taxa resolução", value: `${analysis.demandStats.taxaResolucao.toFixed(0)}%` },
     ];
   }, [analysis]);
 
@@ -326,14 +321,78 @@ function Index() {
 
         {analysis && (
           <div className="mt-10 space-y-8">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {stats!.map((s) => (
-                <div key={s.label} className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-emerald-700/70">{s.label}</p>
-                  <p className="mt-1 text-3xl font-bold text-emerald-900">{s.value}</p>
+                <div key={s.label} className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
+                  <p className="text-[10px] uppercase tracking-wide text-emerald-700/70">{s.label}</p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-900">{s.value}</p>
                 </div>
               ))}
             </div>
+
+            {analysis.closureVerdict && (
+              <div
+                className={
+                  "rounded-xl border-2 p-5 shadow-sm " +
+                  (analysis.closureVerdict.recommendation === "pode_encerrar"
+                    ? "border-emerald-500 bg-emerald-50"
+                    : analysis.closureVerdict.recommendation === "manter_aberto"
+                      ? "border-red-400 bg-red-50"
+                      : "border-amber-400 bg-amber-50")
+                }
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-lg font-bold text-emerald-900">
+                    Parecer (últimas 2 semanas)
+                  </h3>
+                  <span
+                    className={
+                      "rounded-full px-3 py-1 text-sm font-bold text-white " +
+                      (analysis.closureVerdict.recommendation === "pode_encerrar"
+                        ? "bg-emerald-600"
+                        : analysis.closureVerdict.recommendation === "manter_aberto"
+                          ? "bg-red-600"
+                          : "bg-amber-600")
+                    }
+                  >
+                    {analysis.closureVerdict.recommendation === "pode_encerrar"
+                      ? "✅ Pode encerrar"
+                      : analysis.closureVerdict.recommendation === "manter_aberto"
+                        ? "⛔ Manter aberto"
+                        : "⚠️ Avaliar manualmente"}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+                  <Pill label="Mensagens" value={analysis.closureVerdict.totalMessages} />
+                  <Pill label="Participantes ativos" value={analysis.closureVerdict.activeParticipants} />
+                  <Pill label="Pendentes" value={analysis.closureVerdict.openDemands} />
+                  <Pill label="Resolvidas" value={analysis.closureVerdict.resolvedDemands} />
+                  <Pill
+                    label="Dias s/ msg"
+                    value={analysis.closureVerdict.daysSinceLastMessage >= 9999 ? 0 : analysis.closureVerdict.daysSinceLastMessage}
+                  />
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-emerald-900/80">
+                  {analysis.closureVerdict.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {analysis.demandStats.resolvedoresTop.length > 0 && (
+              <Card title="Quem resolveu mais demandas">
+                <Table
+                  head={["Resolvedor", "Demandas resolvidas"]}
+                  rows={analysis.demandStats.resolvedoresTop.map((r) => [r.name, r.count])}
+                />
+                {analysis.demandStats.tempoMedioResolucaoHoras !== null && (
+                  <p className="mt-3 text-sm text-emerald-800/70">
+                    Tempo médio de resolução: <strong>{analysis.demandStats.tempoMedioResolucaoHoras.toFixed(1)}h</strong>
+                  </p>
+                )}
+              </Card>
+            )}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -371,7 +430,7 @@ function Index() {
                 <p className="text-sm text-emerald-800/70">Nenhuma demanda identificada.</p>
               ) : (
                 <Table
-                  head={["Data", "Solicitante", "Mensagem", "Status", "Resolvido por"]}
+                  head={["Data abertura", "Solicitante", "Mensagem", "Status", "Resolvido por", "Quando"]}
                   rows={analysis.demands.slice(0, 30).map((d) => [
                     d.date.toLocaleString("pt-BR"),
                     d.requester,
@@ -387,6 +446,7 @@ function Index() {
                       {d.status}
                     </span>,
                     d.resolvedBy ?? "—",
+                    d.resolvedAt ? d.resolvedAt.toLocaleString("pt-BR") : "—",
                   ])}
                 />
               )}
