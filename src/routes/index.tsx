@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { generatePdf } from "@/lib/pdf-report";
 
@@ -22,40 +22,132 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
+type ExtraMedia = {
+  images: { name: string; size: number }[];
+  videos: { name: string; size: number }[];
+  audios: { name: string; size: number }[];
+  documents: { name: string; size: number }[];
+  others: { name: string; size: number }[];
+};
+
+const EXT = {
+  image: ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "tiff"],
+  video: ["mp4", "mov", "avi", "mkv", "3gp", "webm"],
+  audio: ["opus", "mp3", "ogg", "m4a", "wav", "aac", "flac"],
+  document: ["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "vcf"],
+};
+
+function classify(name: string): keyof ExtraMedia | "txt" {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (ext === "txt") return "txt";
+  if (EXT.image.includes(ext)) return "images";
+  if (EXT.video.includes(ext)) return "videos";
+  if (EXT.audio.includes(ext)) return "audios";
+  if (EXT.document.includes(ext)) return "documents";
+  return "others";
+}
+
 function Index() {
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [rawText, setRawText] = useState<string | null>(null);
+  const [sourceLabel, setSourceLabel] = useState<string | null>(null);
+  const [txtFiles, setTxtFiles] = useState<File[]>([]);
+  const [extras, setExtras] = useState<ExtraMedia>({
+    images: [],
+    videos: [],
+    audios: [],
+    documents: [],
+    others: [],
+  });
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
-  async function onFiles(files: FileList | null) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+
+  // Set folder-upload attributes via ref (React strips unknown attrs)
+  useEffect(() => {
+    if (folderRef.current) {
+      folderRef.current.setAttribute("webkitdirectory", "");
+      folderRef.current.setAttribute("directory", "");
+      folderRef.current.setAttribute("mozdirectory", "");
+    }
+  }, []);
+
+  async function handleFiles(files: File[], label: string) {
     setError(null);
+    setInfo(null);
     setAnalysis(null);
-    if (!files || files.length === 0) return;
-    // Pick the first .txt found (supports single file or folder upload)
-    const txt = Array.from(files).find((f) => f.name.toLowerCase().endsWith(".txt"));
-    if (!txt) {
-      setError("Nenhum arquivo .txt encontrado. Exporte a conversa do WhatsApp e selecione o .txt.");
+    if (files.length === 0) return;
+
+    const buckets: ExtraMedia = {
+      images: [],
+      videos: [],
+      audios: [],
+      documents: [],
+      others: [],
+    };
+    const txts: File[] = [];
+    for (const f of files) {
+      const k = classify(f.name);
+      if (k === "txt") txts.push(f);
+      else buckets[k].push({ name: f.name, size: f.size });
+    }
+
+    setExtras(buckets);
+    setTxtFiles(txts);
+    setSourceLabel(label);
+
+    const totalMedia =
+      buckets.images.length + buckets.videos.length + buckets.audios.length + buckets.documents.length;
+    if (txts.length === 0 && totalMedia === 0) {
+      setError("Nenhum arquivo reconhecido. Envie o .txt exportado do WhatsApp ou a pasta inteira da exportação.");
       return;
     }
-    setFileName(txt.name);
-    const text = await txt.text();
-    setRawText(text);
+    if (txts.length === 0) {
+      setInfo(
+        `Encontrei ${totalMedia} mídia(s), mas nenhum arquivo .txt da conversa. As mídias serão contabilizadas no relatório, mas é recomendado enviar o .txt para análise completa.`,
+      );
+    } else {
+      setInfo(
+        `Pronto para analisar: ${txts.length} conversa(s) .txt` +
+          (totalMedia ? ` + ${totalMedia} mídia(s) detectada(s).` : "."),
+      );
+    }
   }
 
-  function runAnalysis() {
-    if (!rawText) return;
+  async function runAnalysis() {
     setLoading(true);
     setError(null);
     try {
-      const msgs = parseWhatsApp(rawText);
-      if (msgs.length === 0) {
-        setError("Não foi possível identificar mensagens. Verifique se é uma exportação válida do WhatsApp.");
+      // Concatenate all txt contents
+      let combined = "";
+      for (const f of txtFiles) {
+        const t = await f.text();
+        combined += (combined ? "\n" : "") + t;
+      }
+      const msgs = combined ? parseWhatsApp(combined) : [];
+      const a = analyze(msgs);
+
+      // Merge file-based media counts (folder contents override / supplement)
+      const fileMedia = {
+        image: extras.images.length,
+        video: extras.videos.length,
+        audio: extras.audios.length,
+        document: extras.documents.length,
+        sticker: 0,
+        gif: 0,
+      };
+      for (const k of Object.keys(fileMedia) as (keyof typeof fileMedia)[]) {
+        a.mediaCount[k] = Math.max(a.mediaCount[k], fileMedia[k]);
+      }
+
+      if (msgs.length === 0 && extras.images.length + extras.videos.length + extras.audios.length === 0) {
+        setError("Não foi possível identificar mensagens nem mídias.");
         setAnalysis(null);
       } else {
-        setAnalysis(analyze(msgs));
+        setAnalysis(a);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao analisar.");
@@ -65,9 +157,34 @@ function Index() {
   }
 
   function downloadPdf() {
-    if (!analysis || !fileName) return;
-    const doc = generatePdf(analysis, fileName);
+    if (!analysis || !sourceLabel) return;
+    const doc = generatePdf(analysis, sourceLabel);
     doc.save(`relatorio-whatsapp-${Date.now()}.pdf`);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const items = e.dataTransfer.items;
+    if (items && items.length && typeof items[0].webkitGetAsEntry === "function") {
+      // Walk directory entries
+      const all: File[] = [];
+      const promises: Promise<void>[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry();
+        if (entry) promises.push(walkEntry(entry, all));
+      }
+      Promise.all(promises).then(() => {
+        const label =
+          items.length === 1 && items[0].webkitGetAsEntry()?.isDirectory
+            ? items[0].webkitGetAsEntry()!.name
+            : `${all.length} arquivos`;
+        handleFiles(all, label);
+      });
+    } else {
+      const files = Array.from(e.dataTransfer.files);
+      handleFiles(files, files.length === 1 ? files[0].name : `${files.length} arquivos`);
+    }
   }
 
   const stats = useMemo(() => {
@@ -77,11 +194,17 @@ function Index() {
       { label: "Participantes", value: analysis.participants.length },
       { label: "Demandas", value: analysis.demands.length },
       {
-        label: "Resolvidas",
-        value: analysis.demands.filter((d) => d.status === "resolvido").length,
+        label: "Mídias",
+        value:
+          analysis.mediaCount.image +
+          analysis.mediaCount.video +
+          analysis.mediaCount.audio +
+          analysis.mediaCount.document,
       },
     ];
   }, [analysis]);
+
+  const canAnalyze = txtFiles.length > 0 || extras.images.length + extras.videos.length + extras.audios.length + extras.documents.length > 0;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-emerald-50 to-white">
@@ -102,57 +225,98 @@ function Index() {
       </header>
 
       <section className="mx-auto max-w-6xl px-6 py-10">
-        <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
+        <div
+          className={`rounded-2xl border-2 ${dragOver ? "border-emerald-500 bg-emerald-50" : "border-emerald-100 bg-white"} p-8 shadow-sm transition`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
           <h2 className="text-2xl font-bold text-emerald-900">
             Envie a exportação do WhatsApp
           </h2>
           <p className="mt-2 text-sm text-emerald-800/70">
-            Selecione o arquivo <code className="rounded bg-emerald-50 px-1.5 py-0.5">.txt</code>{" "}
-            exportado, ou a pasta completa (o .txt será detectado automaticamente).
+            Aceita: <strong>.txt</strong>, .docx, .pdf, imagens (.jpg .png .webp), vídeos (.mp4 .mov)
+            e áudios (.opus .mp3 .ogg). Você pode arrastar uma pasta inteira aqui.
           </p>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 px-6 py-10 text-center transition hover:bg-emerald-50">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 px-6 py-10 text-center transition hover:bg-emerald-50"
+            >
               <span className="text-3xl">📄</span>
-              <span className="mt-2 font-medium text-emerald-900">Arquivo único</span>
-              <span className="text-xs text-emerald-700/70">.txt da conversa</span>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".txt,text/plain"
-                className="hidden"
-                onChange={(e) => onFiles(e.target.files)}
-              />
-            </label>
-            <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 px-6 py-10 text-center transition hover:bg-emerald-50">
+              <span className="mt-2 font-medium text-emerald-900">Arquivos</span>
+              <span className="text-xs text-emerald-700/70">um ou vários (qualquer tipo)</span>
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                handleFiles(files, files.length === 1 ? files[0].name : `${files.length} arquivos`);
+                e.target.value = "";
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => folderRef.current?.click()}
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 px-6 py-10 text-center transition hover:bg-emerald-50"
+            >
               <span className="text-3xl">📁</span>
               <span className="mt-2 font-medium text-emerald-900">Pasta completa</span>
               <span className="text-xs text-emerald-700/70">extração inteira do WhatsApp</span>
-              <input
-                type="file"
-                /* @ts-expect-error non-standard */
-                webkitdirectory=""
-                directory=""
-                multiple
-                className="hidden"
-                onChange={(e) => onFiles(e.target.files)}
-              />
-            </label>
+            </button>
+            <input
+              ref={folderRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                // Try to label by top-level folder
+                let label = `${files.length} arquivos`;
+                const first = files[0] as File & { webkitRelativePath?: string };
+                if (first?.webkitRelativePath) label = first.webkitRelativePath.split("/")[0];
+                handleFiles(files, label);
+                e.target.value = "";
+              }}
+            />
           </div>
 
-          {fileName && (
-            <div className="mt-6 flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3">
-              <span className="text-sm font-medium text-emerald-900">📎 {fileName}</span>
-              <button
-                onClick={runAnalysis}
-                disabled={loading}
-                className="ml-auto rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:opacity-50"
-              >
-                {loading ? "Analisando…" : "Analisar conversa"}
-              </button>
+          {sourceLabel && (
+            <div className="mt-6 space-y-3">
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+                <span className="text-sm font-medium text-emerald-900">📎 {sourceLabel}</span>
+                <button
+                  onClick={runAnalysis}
+                  disabled={loading || !canAnalyze}
+                  className="ml-auto rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {loading ? "Analisando…" : "Analisar conversa"}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-emerald-800/80 sm:grid-cols-5">
+                <Pill label="Conversas (.txt)" value={txtFiles.length} />
+                <Pill label="Imagens" value={extras.images.length} />
+                <Pill label="Vídeos" value={extras.videos.length} />
+                <Pill label="Áudios" value={extras.audios.length} />
+                <Pill label="Documentos" value={extras.documents.length} />
+              </div>
             </div>
           )}
 
+          {info && !error && (
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              {info}
+            </div>
+          )}
           {error && (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               {error}
@@ -164,13 +328,8 @@ function Index() {
           <div className="mt-10 space-y-8">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {stats!.map((s) => (
-                <div
-                  key={s.label}
-                  className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm"
-                >
-                  <p className="text-xs uppercase tracking-wide text-emerald-700/70">
-                    {s.label}
-                  </p>
+                <div key={s.label} className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-emerald-700/70">{s.label}</p>
                   <p className="mt-1 text-3xl font-bold text-emerald-900">{s.value}</p>
                 </div>
               ))}
@@ -179,9 +338,7 @@ function Index() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-xl font-bold text-emerald-900">Pré-visualização</h3>
-                <p className="text-sm text-emerald-800/70">
-                  Revise os dados antes de exportar o relatório.
-                </p>
+                <p className="text-sm text-emerald-800/70">Revise os dados antes de exportar o relatório.</p>
               </div>
               <button
                 onClick={downloadPdf}
@@ -192,17 +349,21 @@ function Index() {
             </div>
 
             <Card title="Participantes">
-              <Table
-                head={["Nome", "Mensagens", "%", "Mídias", "Pediu", "Resolveu"]}
-                rows={analysis.participants.map((p) => [
-                  p.name,
-                  p.messageCount,
-                  p.percentage.toFixed(1) + "%",
-                  p.mediaSent,
-                  p.demandsRequested,
-                  p.demandsResolved,
-                ])}
-              />
+              {analysis.participants.length === 0 ? (
+                <p className="text-sm text-emerald-800/70">Sem participantes identificados (apenas mídias foram enviadas).</p>
+              ) : (
+                <Table
+                  head={["Nome", "Mensagens", "%", "Mídias", "Pediu", "Resolveu"]}
+                  rows={analysis.participants.map((p) => [
+                    p.name,
+                    p.messageCount,
+                    p.percentage.toFixed(1) + "%",
+                    p.mediaSent,
+                    p.demandsRequested,
+                    p.demandsResolved,
+                  ])}
+                />
+              )}
             </Card>
 
             <Card title={`Demandas (${analysis.demands.length})`}>
@@ -232,13 +393,31 @@ function Index() {
             </Card>
 
             <Card title="Linha do tempo (resumo diário)">
+              {analysis.dailySummary.length === 0 ? (
+                <p className="text-sm text-emerald-800/70">Sem mensagens datadas.</p>
+              ) : (
+                <Table
+                  head={["Data", "Mensagens", "Tópicos"]}
+                  rows={analysis.dailySummary.slice(-20).map((d) => [
+                    new Date(d.date).toLocaleDateString("pt-BR"),
+                    d.count,
+                    d.topics.join(", "),
+                  ])}
+                />
+              )}
+            </Card>
+
+            <Card title="Mídias detectadas">
               <Table
-                head={["Data", "Mensagens", "Tópicos"]}
-                rows={analysis.dailySummary.slice(-20).map((d) => [
-                  new Date(d.date).toLocaleDateString("pt-BR"),
-                  d.count,
-                  d.topics.join(", "),
-                ])}
+                head={["Tipo", "Quantidade"]}
+                rows={[
+                  ["Imagens", analysis.mediaCount.image],
+                  ["Vídeos", analysis.mediaCount.video],
+                  ["Áudios", analysis.mediaCount.audio],
+                  ["Documentos", analysis.mediaCount.document],
+                  ["Figurinhas", analysis.mediaCount.sticker],
+                  ["GIFs", analysis.mediaCount.gif],
+                ]}
               />
             </Card>
           </div>
@@ -249,6 +428,15 @@ function Index() {
         Os arquivos são processados localmente no seu navegador.
       </footer>
     </main>
+  );
+}
+
+function Pill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between rounded-md border border-emerald-100 bg-white px-3 py-1.5">
+      <span>{label}</span>
+      <span className="font-semibold text-emerald-900">{value}</span>
+    </div>
   );
 }
 
@@ -294,4 +482,26 @@ function Table({
       </table>
     </div>
   );
+}
+
+// Recursively walk a DataTransferItem entry tree
+async function walkEntry(entry: FileSystemEntry, out: File[]): Promise<void> {
+  if (entry.isFile) {
+    const file = await new Promise<File>((res, rej) =>
+      (entry as FileSystemFileEntry).file(res, rej),
+    );
+    out.push(file);
+  } else if (entry.isDirectory) {
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    const readAll = async (): Promise<FileSystemEntry[]> => {
+      const batch = await new Promise<FileSystemEntry[]>((res, rej) =>
+        reader.readEntries(res, rej),
+      );
+      if (batch.length === 0) return [];
+      const rest = await readAll();
+      return [...batch, ...rest];
+    };
+    const entries = await readAll();
+    for (const e of entries) await walkEntry(e, out);
+  }
 }
