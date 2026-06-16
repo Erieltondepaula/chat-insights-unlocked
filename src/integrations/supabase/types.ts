@@ -14,16 +14,251 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      agendamentos: {
+        Row: {
+          convenio: string
+          criado_em: string
+          criado_por: string | null
+          data_hora: string
+          demanda_id: string | null
+          id: string
+          origem: Database["public"]["Enums"]["resolvedor_tipo"]
+          paciente_nome: string | null
+          paciente_telefone: string
+          procedimento_id: string
+          profissional_id: string
+          status: string
+          unidade: string
+        }
+        Insert: {
+          convenio: string
+          criado_em?: string
+          criado_por?: string | null
+          data_hora: string
+          demanda_id?: string | null
+          id?: string
+          origem?: Database["public"]["Enums"]["resolvedor_tipo"]
+          paciente_nome?: string | null
+          paciente_telefone: string
+          procedimento_id: string
+          profissional_id: string
+          status?: string
+          unidade: string
+        }
+        Update: {
+          convenio?: string
+          criado_em?: string
+          criado_por?: string | null
+          data_hora?: string
+          demanda_id?: string | null
+          id?: string
+          origem?: Database["public"]["Enums"]["resolvedor_tipo"]
+          paciente_nome?: string | null
+          paciente_telefone?: string
+          procedimento_id?: string
+          profissional_id?: string
+          status?: string
+          unidade?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentos_procedimento_id_fkey"
+            columns: ["procedimento_id"]
+            isOneToOne: false
+            referencedRelation: "procedimentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agendamentos_profissional_id_fkey"
+            columns: ["profissional_id"]
+            isOneToOne: false
+            referencedRelation: "profissionais_regras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demandas_auditoria: {
+        Row: {
+          agendamento_id: string | null
+          canal: Database["public"]["Enums"]["canal_origem"]
+          data_abertura: string
+          data_fechamento: string | null
+          id: string
+          intencao_detectada: string | null
+          log_solucao: string | null
+          mensagem_original: string
+          motivo_bloqueio: string | null
+          payload_intencao: Json | null
+          resolvido_por_id: string | null
+          resolvido_por_nome: string | null
+          resolvido_por_tipo:
+            | Database["public"]["Enums"]["resolvedor_tipo"]
+            | null
+          solicitante_id: string
+          solicitante_nome: string | null
+          status: Database["public"]["Enums"]["status_demanda"]
+        }
+        Insert: {
+          agendamento_id?: string | null
+          canal?: Database["public"]["Enums"]["canal_origem"]
+          data_abertura?: string
+          data_fechamento?: string | null
+          id?: string
+          intencao_detectada?: string | null
+          log_solucao?: string | null
+          mensagem_original: string
+          motivo_bloqueio?: string | null
+          payload_intencao?: Json | null
+          resolvido_por_id?: string | null
+          resolvido_por_nome?: string | null
+          resolvido_por_tipo?:
+            | Database["public"]["Enums"]["resolvedor_tipo"]
+            | null
+          solicitante_id: string
+          solicitante_nome?: string | null
+          status?: Database["public"]["Enums"]["status_demanda"]
+        }
+        Update: {
+          agendamento_id?: string | null
+          canal?: Database["public"]["Enums"]["canal_origem"]
+          data_abertura?: string
+          data_fechamento?: string | null
+          id?: string
+          intencao_detectada?: string | null
+          log_solucao?: string | null
+          mensagem_original?: string
+          motivo_bloqueio?: string | null
+          payload_intencao?: Json | null
+          resolvido_por_id?: string | null
+          resolvido_por_nome?: string | null
+          resolvido_por_tipo?:
+            | Database["public"]["Enums"]["resolvedor_tipo"]
+            | null
+          solicitante_id?: string
+          solicitante_nome?: string | null
+          status?: Database["public"]["Enums"]["status_demanda"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demandas_auditoria_agendamento_id_fkey"
+            columns: ["agendamento_id"]
+            isOneToOne: false
+            referencedRelation: "agendamentos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      procedimentos: {
+        Row: {
+          ativo: boolean
+          codigo: string
+          criado_em: string
+          duracao_minutos: number
+          exige_guia: boolean
+          id: string
+          nome: string
+          preparo: string | null
+          sinonimos: Json
+        }
+        Insert: {
+          ativo?: boolean
+          codigo: string
+          criado_em?: string
+          duracao_minutos?: number
+          exige_guia?: boolean
+          id?: string
+          nome: string
+          preparo?: string | null
+          sinonimos?: Json
+        }
+        Update: {
+          ativo?: boolean
+          codigo?: string
+          criado_em?: string
+          duracao_minutos?: number
+          exige_guia?: boolean
+          id?: string
+          nome?: string
+          preparo?: string | null
+          sinonimos?: Json
+        }
+        Relationships: []
+      }
+      profissionais_regras: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          conselho: string | null
+          convenios: Json
+          criado_em: string
+          id: string
+          idade_max: number
+          idade_min: number
+          nome: string
+          unidades_ativas: Json
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          conselho?: string | null
+          convenios?: Json
+          criado_em?: string
+          id?: string
+          idade_max?: number
+          idade_min?: number
+          nome: string
+          unidades_ativas?: Json
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          conselho?: string | null
+          convenios?: Json
+          criado_em?: string
+          id?: string
+          idade_max?: number
+          idade_min?: number
+          nome?: string
+          unidades_ativas?: Json
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "auditor" | "operador"
+      canal_origem: "whatsapp" | "web" | "telefone"
+      resolvedor_tipo: "agente_flow" | "atendente_humano"
+      status_demanda: "pendente" | "em_atendimento" | "resolvido" | "cancelado"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +385,11 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "auditor", "operador"],
+      canal_origem: ["whatsapp", "web", "telefone"],
+      resolvedor_tipo: ["agente_flow", "atendente_humano"],
+      status_demanda: ["pendente", "em_atendimento", "resolvido", "cancelado"],
+    },
   },
 } as const
