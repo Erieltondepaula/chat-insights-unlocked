@@ -214,6 +214,67 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
     { maxWidth: pageW - margin * 2 },
   );
 
+  // ===== Parecer das últimas 2 semanas
+  doc.addPage();
+  sectionTitle(doc, "Análise — Últimas 2 Semanas", margin, margin);
+  const cv = a.closureVerdict;
+  let py = margin + 30;
+  if (cv) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(
+      `Janela analisada: ${fmtDateOnly(cv.windowStart)} → ${fmtDateOnly(cv.windowEnd)}`,
+      margin,
+      py,
+    );
+    py += 18;
+    autoTable(doc, {
+      startY: py,
+      head: [["Indicador", "Valor"]],
+      body: [
+        ["Mensagens no período", cv.totalMessages],
+        ["Participantes ativos", cv.activeParticipants],
+        ["Demandas resolvidas no período", cv.resolvedDemands],
+        ["Demandas abertas no período", cv.openDemands],
+        ["Dias desde a última mensagem", cv.daysSinceLastMessage >= 9999 ? "—" : cv.daysSinceLastMessage],
+      ],
+      headStyles: { fillColor: [20, 83, 45] },
+      margin: { left: margin, right: margin },
+    });
+    py = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 24;
+
+    const verdictLabel =
+      cv.recommendation === "pode_encerrar"
+        ? "PARECER: GRUPO PODE SER ENCERRADO"
+        : cv.recommendation === "manter_aberto"
+          ? "PARECER: MANTER GRUPO ABERTO"
+          : "PARECER: AVALIAR MANUALMENTE";
+    const verdictColor: [number, number, number] =
+      cv.recommendation === "pode_encerrar"
+        ? [22, 163, 74]
+        : cv.recommendation === "manter_aberto"
+          ? [220, 38, 38]
+          : [202, 138, 4];
+    doc.setFillColor(...verdictColor);
+    doc.rect(margin, py, pageW - margin * 2, 32, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(verdictLabel, margin + 14, py + 21);
+    py += 48;
+    doc.setTextColor(20, 20, 20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Justificativas:", margin, py);
+    py += 16;
+    doc.setFont("helvetica", "normal");
+    for (const r of cv.reasons) {
+      const wrapped = doc.splitTextToSize(`• ${r}`, pageW - margin * 2);
+      doc.text(wrapped, margin, py);
+      py += wrapped.length * 14 + 4;
+    }
+  }
+
   // ===== Conclusão
   doc.addPage();
   sectionTitle(doc, "Conclusão e Insights", margin, margin);
@@ -225,12 +286,12 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
   const requester = [...a.participants].sort((p1, p2) => p2.demandsRequested - p1.demandsRequested)[0];
   if (requester && requester.demandsRequested > 0)
     insights.push(`• ${requester.name} é quem mais solicita (${requester.demandsRequested}).`);
-  const pendentes = a.demands.filter((d) => d.status === "pendente").length;
-  if (pendentes) insights.push(`• Existem ${pendentes} demandas sem resolução clara — recomenda-se acompanhamento.`);
+  if (ds.pendentes) insights.push(`• Existem ${ds.pendentes} demandas sem resolução clara — recomenda-se acompanhamento.`);
   if (a.dailySummary.length) {
     const busiest = [...a.dailySummary].sort((d1, d2) => d2.count - d1.count)[0];
     insights.push(`• Dia mais ativo: ${new Date(busiest.date).toLocaleDateString("pt-BR")} (${busiest.count} mensagens).`);
   }
+  insights.push("• Toda automação registrada como 'Agente Flow' (nunca referir como robô/bot).");
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   let cy = margin + 30;
