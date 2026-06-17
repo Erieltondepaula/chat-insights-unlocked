@@ -307,8 +307,19 @@ export function analyze(messages: Message[]): Analysis {
   const total = nonSys.length || 1;
   for (const p of pmap.values()) p.percentage = (p.messageCount / total) * 100;
 
-  // Group creation
+  // Group creation + name detection
   const created = sys.find((s) => /criou o grupo|created group/i.test(s.content));
+  let groupName: string | null = null;
+  // pattern: ' criou o grupo "NOME"' or 'criou o grupo NOME'
+  for (const s of sys) {
+    const m =
+      s.content.match(/criou o grupo\s+["“"]([^"”"]+)["”"]/i) ||
+      s.content.match(/created group\s+["“"]([^"”"]+)["”"]/i) ||
+      s.content.match(/(?:mudou|changed).*(?:assunto|nome|subject|name).*?(?:para|to)\s+["“"]([^"”"]+)["”"]/i);
+    if (m) {
+      groupName = m[1].trim();
+    }
+  }
 
   // Demand stats
   const resolvidas = demands.filter((d) => d.status === "resolvido");
