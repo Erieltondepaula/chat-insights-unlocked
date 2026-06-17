@@ -391,6 +391,7 @@ export function analyze(messages: Message[]): Analysis {
     firstDate: messages[0]?.date ?? null,
     lastDate: messages[messages.length - 1]?.date ?? null,
     groupCreatedAt: created?.date ?? null,
+    groupName,
     participants: [...pmap.values()].sort((a, b) => b.messageCount - a.messageCount),
     mediaCount,
     demands,
