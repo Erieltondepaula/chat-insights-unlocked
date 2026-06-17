@@ -58,6 +58,7 @@ function Index() {
     others: [],
   });
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
