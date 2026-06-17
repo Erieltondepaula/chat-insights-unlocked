@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
-import { generatePdf } from "@/lib/pdf-report";
+import { buildDraft, generatePdf, type ReportDraft } from "@/lib/pdf-report";
 
 export const Route = createFileRoute("/")({
   head: () => ({
