@@ -2,238 +2,267 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Analysis } from "./whatsapp-parser";
 
-const fmtDateOnly = (d: Date) => d.toLocaleDateString("pt-BR");
-const fmtDate = (d: Date) =>
-  d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-
 const BRAND: [number, number, number] = [20, 83, 45];
 
-export function generatePdf(a: Analysis, sourceName: string): jsPDF {
+const fmtDateOnly = (d: Date | null | undefined) =>
+  d ? d.toLocaleDateString("pt-BR") : "—";
+
+export type ReportDraft = {
+  title: string;            // group / report title
+  clientName: string;       // shown in identification block
+  groupCreatedAt: string;   // formatted date string
+  period: string;           // "dd/mm/aaaa a dd/mm/aaaa"
+  emissionDate: string;
+  status: string;
+  totalMessages: number;
+  participantsCount: number;
+  executiveSummary: string;     // multiline text
+  verdictLabel: string;         // colored banner text
+  verdictRecommendation: "pode_encerrar" | "manter_aberto" | "avaliar_manual";
+  verdictBody: string;          // multiline narrative for the 2-week analysis
+  envolvidos: { name: string; role: string }[];
+  criticalDemands: { dateLabel: string; ocorrencia: string; resolucao: string }[];
+  finalOpinion: string;         // multiline
+};
+
+export function buildDraft(a: Analysis, sourceName: string): ReportDraft {
+  const title = (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, "");
+  const ds = a.demandStats;
+  const top = a.participants[0];
+  const solver = [...a.participants].sort((x, z) => z.demandsResolved - x.demandsResolved)[0];
+  const cv = a.closureVerdict;
+
+  const period =
+    a.firstDate && a.lastDate
+      ? `${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}`
+      : "—";
+
+  const status =
+    cv?.recommendation === "manter_aberto"
+      ? "Em acompanhamento"
+      : cv?.recommendation === "pode_encerrar"
+        ? "Apto a encerramento"
+        : "Em avaliação";
+
+  const executiveSummary = [
+    `Foram registradas ${a.totalMessages} mensagens entre ${a.participants.length} participantes${
+      a.firstDate && a.lastDate ? `, no período de ${period}` : ""
+    }.`,
+    top
+      ? `Participante mais ativo: ${top.name} (${top.messageCount} mensagens, ${top.percentage.toFixed(1)}%).`
+      : "",
+    `Demandas: ${ds.total} solicitadas · ${ds.resolvidas} resolvidas · ${ds.pendentes} pendentes (taxa ${ds.taxaResolucao.toFixed(0)}%).`,
+    solver && solver.demandsResolved > 0
+      ? `Maior resolvedor: ${solver.name} (${solver.demandsResolved} demandas resolvidas).`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const verdictLabel =
+    cv?.recommendation === "pode_encerrar"
+      ? "PARECER: GRUPO PODE SER ENCERRADO"
+      : cv?.recommendation === "manter_aberto"
+        ? "PARECER: MANTER GRUPO ABERTO"
+        : "PARECER: AVALIAR MANUALMENTE";
+
+  const verdictBody = cv
+    ? [
+        `Janela analisada: ${fmtDateOnly(cv.windowStart)} a ${fmtDateOnly(cv.windowEnd)}.`,
+        `${cv.totalMessages} mensagens · ${cv.activeParticipants} participante(s) ativo(s) · ${cv.openDemands} pendente(s) · ${cv.resolvedDemands} resolvida(s).`,
+        ...cv.reasons.map((r) => `• ${r}`),
+      ].join("\n")
+    : "";
+
+  // Critical demands: prefer pendentes; complete with resolvidas mais recentes
+  const pend = a.demands.filter((d) => d.status === "pendente").slice(0, 6);
+  const resv = a.demands.filter((d) => d.status === "resolvido").slice(-4);
+  const picked = [...pend, ...resv].slice(0, 8);
+  const criticalDemands = picked.map((d) => ({
+    dateLabel: d.date.toLocaleDateString("pt-BR"),
+    ocorrencia: `${d.requester}: ${d.message.replace(/\s+/g, " ").slice(0, 240)}`,
+    resolucao:
+      d.status === "resolvido" && d.resolvedBy
+        ? `Resolvido por ${d.resolvedBy}${d.resolvedAt ? ` em ${d.resolvedAt.toLocaleDateString("pt-BR")}` : ""}.`
+        : "Pendente — sem resolução clara identificada.",
+  }));
+
+  const envolvidos = a.participants.slice(0, 10).map((p) => ({
+    name: p.name,
+    role: `${p.messageCount} msg (${p.percentage.toFixed(1)}%) · pediu ${p.demandsRequested} · resolveu ${p.demandsResolved}`,
+  }));
+
+  const finalOpinion = [
+    top ? `${top.name} concentra ${top.percentage.toFixed(1)}% das mensagens, sendo o principal ponto focal do grupo.` : "",
+    solver && solver.demandsResolved > 0
+      ? `Maior resolvedor identificado: ${solver.name} (${solver.demandsResolved} demandas).`
+      : "",
+    ds.tempoMedioResolucaoHoras !== null
+      ? `Tempo médio de resolução: ${ds.tempoMedioResolucaoHoras.toFixed(1)} horas.`
+      : "",
+    ds.pendentes
+      ? `Há ${ds.pendentes} demanda(s) sem resolução clara — recomenda-se acompanhamento individual.`
+      : "Nenhuma demanda em aberto identificada.",
+    cv?.recommendation === "pode_encerrar"
+      ? "Conclusão: baixa atividade e ausência de pendências críticas nas últimas 2 semanas — grupo apto a encerramento."
+      : cv?.recommendation === "manter_aberto"
+        ? "Conclusão: atividade ou pendências relevantes nas últimas 2 semanas — manter o grupo aberto."
+        : "Conclusão: indicadores ambíguos — recomenda-se avaliação manual.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    title,
+    clientName: title,
+    groupCreatedAt: fmtDateOnly(a.groupCreatedAt ?? a.firstDate ?? null),
+    period,
+    emissionDate: new Date().toLocaleDateString("pt-BR"),
+    status,
+    totalMessages: a.totalMessages,
+    participantsCount: a.participants.length,
+    executiveSummary,
+    verdictLabel,
+    verdictRecommendation: cv?.recommendation ?? "avaliar_manual",
+    verdictBody,
+    envolvidos,
+    criticalDemands,
+    finalOpinion,
+  };
+}
+
+export function generatePdf(draft: ReportDraft): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 48;
   const contentW = pageW - margin * 2;
 
-  const title = (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, "");
-
-  // ===== Cabeçalho compacto
+  // ===== Cabeçalho
   doc.setFillColor(...BRAND);
-  doc.rect(0, 0, pageW, 96, "F");
+  doc.rect(0, 0, pageW, 110, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   doc.text("RELATÓRIO TÉCNICO DE AUDITORIA DE DEMANDAS", margin, 32);
-  doc.setFontSize(18);
-  const titleLines = doc.splitTextToSize(title, contentW);
-  doc.text(titleLines.slice(0, 2), margin, 58);
 
-  let y = 120;
+  // título auto-encolhe pra caber em 2 linhas máx
+  let titleSize = 20;
+  doc.setFontSize(titleSize);
+  let titleLines = doc.splitTextToSize(draft.title, contentW);
+  while (titleLines.length > 2 && titleSize > 12) {
+    titleSize -= 1;
+    doc.setFontSize(titleSize);
+    titleLines = doc.splitTextToSize(draft.title, contentW);
+  }
+  doc.text(titleLines.slice(0, 2), margin, 62);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(`Início do grupo: ${draft.groupCreatedAt}`, margin, 98);
+
+  let y = 132;
   doc.setTextColor(20, 20, 20);
 
-  // ===== 1. Identificação
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  const period =
-    a.firstDate && a.lastDate ? `${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}` : "—";
+  // ===== Identificação (tabela limpa)
   autoTable(doc, {
     startY: y,
-    theme: "plain",
-    styles: { fontSize: 9, cellPadding: 3 },
+    theme: "grid",
+    styles: { fontSize: 9.5, cellPadding: 6, valign: "middle" },
+    columnStyles: {
+      0: { fontStyle: "bold", cellWidth: 110, fillColor: [245, 250, 247] },
+      1: { cellWidth: (contentW - 220) / 2 },
+      2: { fontStyle: "bold", cellWidth: 110, fillColor: [245, 250, 247] },
+      3: { cellWidth: (contentW - 220) / 2 },
+    },
     body: [
-      ["Cliente / Grupo:", title, "Data de emissão:", new Date().toLocaleDateString("pt-BR")],
-      ["Sistema auditado:", "Agente Flow (WhatsApp)", "Período analisado:", period],
+      ["Cliente / Grupo", draft.clientName, "Data de emissão", draft.emissionDate],
+      ["Sistema auditado", "Agente Flow (WhatsApp)", "Período analisado", draft.period],
       [
-        "Total de mensagens:",
-        String(a.totalMessages),
-        "Status do projeto:",
-        a.closureVerdict?.recommendation === "manter_aberto"
-          ? "Em acompanhamento"
-          : a.closureVerdict?.recommendation === "pode_encerrar"
-            ? "Apto a encerramento"
-            : "Em avaliação",
+        "Total de mensagens",
+        String(draft.totalMessages),
+        "Status do projeto",
+        draft.status,
       ],
     ],
-    columnStyles: {
-      0: { fontStyle: "bold", cellWidth: 95 },
-      2: { fontStyle: "bold", cellWidth: 95 },
-    },
     margin: { left: margin, right: margin },
   });
-  y = lastY(doc) + 14;
+  y = lastY(doc) + 18;
 
-  // ===== 2. Resumo Executivo
-  sectionTitle(doc, "1. Resumo Executivo", margin, y);
-  y += 18;
-  const top = a.participants[0];
-  const ds = a.demandStats;
-  const summary = [
-    `Foram registradas ${a.totalMessages} mensagens entre ${a.participants.length} participantes${
-      a.firstDate && a.lastDate ? `, no período de ${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}` : ""
-    }.`,
-    top
-      ? `Participante mais ativo: ${top.name} (${top.messageCount} mensagens, ${top.percentage.toFixed(1)}%).`
-      : "",
-    `Demandas: ${ds.total} solicitadas · ${ds.resolvidas} resolvidas · ${ds.pendentes} pendentes (taxa ${ds.taxaResolucao.toFixed(0)}%).`,
-  ].filter(Boolean);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  for (const line of summary) {
-    const w = doc.splitTextToSize(line, contentW);
-    doc.text(w, margin, y);
-    y += w.length * 13 + 2;
-  }
+  // ===== Resumo Executivo
+  y = sectionTitle(doc, "1. Resumo Executivo", margin, y, contentW);
+  y = drawParagraph(doc, draft.executiveSummary, margin, y, contentW);
   y += 8;
 
-  // ===== KPIs
-  const kpis = [
-    { label: "Solicitadas", value: ds.total },
-    { label: "Pendentes", value: ds.pendentes },
-    { label: "Resolvidas", value: ds.resolvidas },
-    { label: "Resolução", value: `${ds.taxaResolucao.toFixed(0)}%` },
-  ];
-  const cardW = (contentW - 18) / 4;
-  kpis.forEach((k, i) => {
-    const x = margin + i * (cardW + 6);
-    doc.setFillColor(240, 253, 244);
-    doc.setDrawColor(...BRAND);
-    doc.roundedRect(x, y, cardW, 46, 5, 5, "FD");
-    doc.setTextColor(...BRAND);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.text(String(k.value), x + 10, y + 24);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(60);
-    doc.text(k.label, x + 10, y + 38);
-  });
-  y += 60;
-  doc.setTextColor(20, 20, 20);
-
-  // ===== 3. Caixa Parecer Crítico
-  const cv = a.closureVerdict;
-  if (cv) {
-    const verdictColor: [number, number, number] =
-      cv.recommendation === "pode_encerrar"
+  // ===== Parecer Crítico (últimas 2 semanas)
+  if (draft.verdictBody.trim()) {
+    y = ensureSpace(doc, y, 80, margin);
+    const color: [number, number, number] =
+      draft.verdictRecommendation === "pode_encerrar"
         ? [22, 163, 74]
-        : cv.recommendation === "manter_aberto"
+        : draft.verdictRecommendation === "manter_aberto"
           ? [220, 38, 38]
           : [202, 138, 4];
-    const verdictLabel =
-      cv.recommendation === "pode_encerrar"
-        ? "PARECER: GRUPO PODE SER ENCERRADO"
-        : cv.recommendation === "manter_aberto"
-          ? "PARECER: MANTER GRUPO ABERTO"
-          : "PARECER: AVALIAR MANUALMENTE";
-    y = ensureSpace(doc, y, 90, margin);
-    doc.setFillColor(...verdictColor);
+    doc.setFillColor(...color);
     doc.rect(margin, y, contentW, 26, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.text(verdictLabel, margin + 12, y + 17);
+    doc.text(draft.verdictLabel, margin + 12, y + 17);
     y += 32;
     doc.setTextColor(20, 20, 20);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    const win = `Janela: ${fmtDateOnly(cv.windowStart)} → ${fmtDateOnly(cv.windowEnd)}  ·  ${cv.totalMessages} mensagens  ·  ${cv.activeParticipants} ativos  ·  ${cv.openDemands} pendentes  ·  ${cv.resolvedDemands} resolvidas`;
-    const wl = doc.splitTextToSize(win, contentW);
-    doc.text(wl, margin, y);
-    y += wl.length * 12 + 4;
-    for (const r of cv.reasons.slice(0, 4)) {
-      const w = doc.splitTextToSize(`• ${r}`, contentW);
-      doc.text(w, margin, y);
-      y += w.length * 12 + 2;
-    }
-    y += 6;
+    y = drawParagraph(doc, draft.verdictBody, margin, y, contentW);
+    y += 10;
   }
 
-  // ===== 4. Envolvidos (top 10)
-  const envolvidos = a.participants.slice(0, 10);
-  if (envolvidos.length) {
+  // ===== Envolvidos
+  if (draft.envolvidos.length) {
     y = ensureSpace(doc, y, 80, margin);
-    sectionTitle(doc, "2. Envolvidos", margin, y);
+    y = sectionTitle(doc, "2. Envolvidos", margin, y, contentW);
     autoTable(doc, {
-      startY: y + 8,
-      head: [["Nome", "Mensagens", "%", "Pediu", "Resolveu"]],
-      body: envolvidos.map((p) => [
-        p.name,
-        p.messageCount,
-        p.percentage.toFixed(1) + "%",
-        p.demandsRequested,
-        p.demandsResolved,
-      ]),
+      startY: y,
+      head: [["Nome", "Atuação no grupo"]],
+      body: draft.envolvidos.map((p) => [p.name, p.role]),
       headStyles: { fillColor: BRAND, fontSize: 9 },
-      styles: { fontSize: 9, cellPadding: 3 },
+      styles: { fontSize: 9, cellPadding: 4 },
       margin: { left: margin, right: margin },
     });
-    y = lastY(doc) + 14;
+    y = lastY(doc) + 16;
   }
 
-  // ===== 5. Linha do tempo de demandas (até 15)
-  const demands = a.demands.slice(0, 15);
-  if (demands.length) {
-    y = ensureSpace(doc, y, 80, margin);
-    sectionTitle(doc, "3. Linha do Tempo de Demandas", margin, y);
-    autoTable(doc, {
-      startY: y + 8,
-      head: [["Data", "Solicitante", "Demanda", "Status", "Resolvido por", "Quando"]],
-      body: demands.map((d) => [
-        fmtDate(d.date),
-        d.requester,
-        d.message.length > 110 ? d.message.slice(0, 110) + "…" : d.message,
-        d.status === "resolvido" ? "✔ Resolvido" : "⏳ Pendente",
-        d.resolvedBy ?? "—",
-        d.resolvedAt ? fmtDate(d.resolvedAt) : "—",
-      ]),
-      headStyles: { fillColor: BRAND, fontSize: 8 },
-      styles: { fontSize: 8, cellPadding: 3, overflow: "linebreak" },
-      columnStyles: { 2: { cellWidth: 170 } },
-      margin: { left: margin, right: margin },
-    });
-    y = lastY(doc) + 8;
-    if (a.demands.length > demands.length) {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8);
-      doc.setTextColor(100);
-      doc.text(
-        `Exibindo ${demands.length} de ${a.demands.length} demandas (priorizadas por ordem cronológica).`,
-        margin,
-        y,
-      );
-      doc.setTextColor(20, 20, 20);
+  // ===== Demandas Críticas (narrativa)
+  if (draft.criticalDemands.length) {
+    y = ensureSpace(doc, y, 60, margin);
+    y = sectionTitle(doc, "3. Demandas Críticas", margin, y, contentW);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    for (const d of draft.criticalDemands) {
+      y = ensureSpace(doc, y, 60, margin);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...BRAND);
+      doc.text(`[${d.dateLabel}]`, margin, y);
       y += 14;
+      doc.setTextColor(20, 20, 20);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.text("Ocorrência:", margin, y);
+      doc.setFont("helvetica", "normal");
+      y = drawParagraph(doc, d.ocorrencia, margin + 70, y, contentW - 70);
+      y += 2;
+      doc.setFont("helvetica", "bold");
+      doc.text("Resolução:", margin, y);
+      doc.setFont("helvetica", "normal");
+      y = drawParagraph(doc, d.resolucao, margin + 70, y, contentW - 70);
+      y += 10;
+      doc.setFontSize(10);
     }
   }
 
-  // ===== 6. Parecer técnico final (curto)
-  y = ensureSpace(doc, y, 100, margin);
-  sectionTitle(doc, "4. Parecer Técnico Final", margin, y);
-  y += 16;
-  const insights: string[] = [];
-  if (top) insights.push(`${top.name} concentra ${top.percentage.toFixed(1)}% das mensagens — principal ponto focal.`);
-  const solver = [...a.participants].sort((x, z) => z.demandsResolved - x.demandsResolved)[0];
-  if (solver && solver.demandsResolved > 0)
-    insights.push(`Maior resolvedor: ${solver.name} (${solver.demandsResolved} demandas).`);
-  if (ds.tempoMedioResolucaoHoras !== null)
-    insights.push(`Tempo médio de resolução: ${ds.tempoMedioResolucaoHoras.toFixed(1)} h.`);
-  if (ds.pendentes)
-    insights.push(`${ds.pendentes} demanda(s) sem resolução clara — recomenda-se acompanhamento.`);
-  if (cv)
-    insights.push(
-      cv.recommendation === "pode_encerrar"
-        ? "Conclusão: o grupo apresenta baixa atividade e nenhuma pendência crítica — apto a encerramento."
-        : cv.recommendation === "manter_aberto"
-          ? "Conclusão: existem pendências/atividade relevantes nas últimas 2 semanas — manter o grupo aberto."
-          : "Conclusão: indicadores ambíguos — recomenda-se avaliação manual antes do encerramento.",
-    );
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  for (const line of insights) {
-    y = ensureSpace(doc, y, 30, margin);
-    const w = doc.splitTextToSize(`• ${line}`, contentW);
-    doc.text(w, margin, y);
-    y += w.length * 13 + 3;
+  // ===== Parecer Final
+  if (draft.finalOpinion.trim()) {
+    y = ensureSpace(doc, y, 80, margin);
+    y = sectionTitle(doc, "4. Parecer Técnico Final", margin, y, contentW);
+    y = drawParagraph(doc, draft.finalOpinion, margin, y, contentW);
   }
 
   // ===== Rodapé
@@ -242,26 +271,43 @@ export function generatePdf(a: Analysis, sourceName: string): jsPDF {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(120);
-    doc.text(
-      `${title} · Auditoria Agente Flow`,
-      margin,
-      pageH - 18,
-    );
-    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 18, { align: "right" });
+    doc.text(`${draft.title} · Auditoria Agente Flow`, margin, pageH - 20);
+    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 20, { align: "right" });
   }
 
   return doc;
 }
 
-function sectionTitle(doc: jsPDF, t: string, x: number, y: number) {
+function sectionTitle(doc: jsPDF, t: string, x: number, y: number, w: number): number {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(...BRAND);
   doc.text(t, x, y);
   doc.setDrawColor(...BRAND);
-  doc.setLineWidth(1);
-  doc.line(x, y + 4, x + 40, y + 4);
+  doc.setLineWidth(0.7);
+  doc.line(x, y + 4, x + w, y + 4);
   doc.setTextColor(20, 20, 20);
+  return y + 18;
+}
+
+function drawParagraph(doc: jsPDF, text: string, x: number, y: number, w: number): number {
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(40, 40, 40);
+  const blocks = text.split(/\n/);
+  for (const b of blocks) {
+    if (!b.trim()) {
+      y += 6;
+      continue;
+    }
+    const lines = doc.splitTextToSize(b, w);
+    for (const line of lines) {
+      y = ensureSpace(doc, y, 16, 48);
+      doc.text(line, x, y);
+      y += 13;
+    }
+  }
+  return y;
 }
 
 function lastY(doc: jsPDF): number {
