@@ -34,6 +34,7 @@ export type Analysis = {
   firstDate: Date | null;
   lastDate: Date | null;
   groupCreatedAt?: Date | null;
+  groupName?: string | null;
   participants: ParticipantStats[];
   mediaCount: { image: number; video: number; audio: number; document: number; sticker: number; gif: number };
   demands: Demand[];
