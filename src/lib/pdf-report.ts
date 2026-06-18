@@ -216,7 +216,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(120, 80, 0);
-    doc.text("⚠  PARECER CRÍTICO", margin + 12, y + 18);
+    doc.text("PARECER DA AUDITORIA", margin + 12, y + 18);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(60, 45, 0);
