@@ -203,7 +203,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   // ===== 2. Fator Conclusivo / Parecer Crítico ============
   if (draft.criticalMotive.trim() || draft.criticalQuote.trim()) {
     y = ensureSpace(doc, y, 120, margin);
-    y = sectionTitle(doc, "2. Fator Conclusivo da Auditoria", margin, y, contentW);
+    y = sectionTitle(doc, "2. Parecer Conclusivo da Auditoria", margin, y, contentW);
 
     // caixa amarela de aviso
     const motiveLines = doc.splitTextToSize(draft.criticalMotive, contentW - 24);
