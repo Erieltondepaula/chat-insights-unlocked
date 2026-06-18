@@ -32,6 +32,9 @@ export type ReportDraft = {
   demands: DemandItem[];
 };
 
+const SUPPORT_ORG = "Amigo - Suporte/Implantação";
+const CLIENT_ORG = "Clínica Contratante";
+
 export function buildDraft(a: Analysis, sourceName: string): ReportDraft {
   const title = (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, "");
   const cv = a.closureVerdict;
@@ -43,11 +46,22 @@ export function buildDraft(a: Analysis, sourceName: string): ReportDraft {
         ? "Apto a encerramento"
         : "Em avaliação";
 
-  const envolvidos: Envolvido[] = a.participants.slice(0, 15).map((p) => ({
-    name: p.name,
-    org: "",
-    role: `${p.demandsRequested} solicitação(ões) · ${p.demandsResolved} resolvida(s) · ${p.messageCount} msg`,
-  }));
+  // Equipe de suporte = quem aparece resolvendo demandas
+  const resolvers = new Set<string>();
+  for (const d of a.demands) {
+    if (d.resolvedBy) resolvers.add(d.resolvedBy.toLowerCase());
+  }
+
+  const envolvidos: Envolvido[] = a.participants.slice(0, 15).map((p) => {
+    const isSupport = resolvers.has(p.name.toLowerCase());
+    return {
+      name: p.name,
+      org: isSupport ? SUPPORT_ORG : CLIENT_ORG,
+      role: isSupport
+        ? `Suporte/Implantação · ${p.demandsResolved} resolvida(s) · ${p.messageCount} msg`
+        : `Solicitante · ${p.demandsRequested} solicitação(ões) · ${p.messageCount} msg`,
+    };
+  });
 
   // pendentes primeiro, depois resolvidas mais recentes
   const pend = a.demands.filter((d) => d.status === "pendente");
@@ -56,30 +70,42 @@ export function buildDraft(a: Analysis, sourceName: string): ReportDraft {
   const demands: DemandItem[] = all.slice(0, 18).map((d) => ({
     dateLabel: d.date.toLocaleDateString("pt-BR"),
     titleLabel: shortTitle(d.message),
-    ocorrencia: `${d.requester}: ${cleanMsg(d.message)}`,
+    ocorrencia: `Solicitação registrada por ${d.requester} (Clínica): ${cleanMsg(d.message)}`,
     resolucao:
       d.status === "resolvido" && d.resolvedBy
-        ? `${d.resolvedBy}${d.resolvedAt ? ` (${d.resolvedAt.toLocaleDateString("pt-BR")})` : ""} concluiu o atendimento.`
-        : "Pendente — sem resolução clara identificada na conversa.",
+        ? `Devolutiva da Equipe Amigo (Suporte/Implantação) por ${d.resolvedBy}${d.resolvedAt ? ` em ${d.resolvedAt.toLocaleDateString("pt-BR")}` : ""}. Atendimento concluído.`
+        : "Sem devolutiva registrada pela Equipe Amigo até o fechamento desta auditoria — demanda pendente.",
   }));
 
-  const criticalMotive = cv
-    ? [
-        `Análise das últimas 2 semanas (${fmtDateOnly(cv.windowStart)} a ${fmtDateOnly(cv.windowEnd)}): ${cv.totalMessages} mensagens, ${cv.activeParticipants} participante(s) ativo(s), ${cv.openDemands} pendente(s) e ${cv.resolvedDemands} resolvida(s).`,
-        ...cv.reasons.map((r) => `• ${r}`),
-      ].join("\n")
-    : "Sem janela suficiente para análise crítica.";
+  // Parecer adaptativo (não assume churn)
+  const parecerLines: string[] = [];
+  if (cv) {
+    parecerLines.push(
+      `Análise das últimas 2 semanas (${fmtDateOnly(cv.windowStart)} a ${fmtDateOnly(cv.windowEnd)}): ${cv.totalMessages} mensagens, ${cv.activeParticipants} participante(s) ativo(s), ${cv.openDemands} pendente(s) e ${cv.resolvedDemands} resolvida(s).`,
+    );
+    parecerLines.push(...cv.reasons.map((r) => `• ${r}`));
+    parecerLines.push("");
+    parecerLines.push(
+      cv.recommendation === "pode_encerrar"
+        ? "Recomendação: grupo apto a encerramento — sem pendências críticas em aberto."
+        : cv.recommendation === "manter_aberto"
+          ? "Recomendação: manter o grupo em acompanhamento ativo."
+          : "Recomendação: submeter à avaliação manual do responsável.",
+    );
+  } else {
+    parecerLines.push("Janela insuficiente para parecer automatizado.");
+  }
 
   return {
     title,
-    subtitle: "Mapeamento Sequencial de Chamados, Soluções Técnicas e Parecer",
+    subtitle: "Mapeamento Sequencial de Chamados, Devolutivas Técnicas e Parecer de Auditoria",
     clientName: title,
     moduleAudited: "Agente Flow (WhatsApp)",
     emissionDate: new Date().toLocaleDateString("pt-BR"),
     status,
     groupCreatedAt: fmtDateOnly(a.groupCreatedAt ?? a.firstDate ?? null),
     envolvidos,
-    criticalMotive,
+    criticalMotive: parecerLines.join("\n"),
     criticalQuote: "",
     criticalQuoteAuthor: "",
     demands,
@@ -177,7 +203,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   // ===== 2. Fator Conclusivo / Parecer Crítico ============
   if (draft.criticalMotive.trim() || draft.criticalQuote.trim()) {
     y = ensureSpace(doc, y, 120, margin);
-    y = sectionTitle(doc, "2. Fator Conclusivo da Auditoria", margin, y, contentW);
+    y = sectionTitle(doc, "2. Parecer Conclusivo da Auditoria", margin, y, contentW);
 
     // caixa amarela de aviso
     const motiveLines = doc.splitTextToSize(draft.criticalMotive, contentW - 24);
@@ -190,7 +216,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(120, 80, 0);
-    doc.text("⚠  PARECER CRÍTICO", margin + 12, y + 18);
+    doc.text("PARECER DA AUDITORIA", margin + 12, y + 18);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(60, 45, 0);
