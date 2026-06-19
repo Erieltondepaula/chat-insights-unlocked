@@ -45,6 +45,22 @@ function classify(name: string): keyof ExtraMedia | "txt" {
   return "others";
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function fallbackMime(name: string, kind: AttachmentInsight["type"]): string {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (kind === "image") return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  if (kind === "audio") return ext === "wav" ? "audio/wav" : ext === "m4a" ? "audio/mp4" : ext === "ogg" || ext === "opus" ? "audio/ogg" : "audio/mpeg";
+  if (ext === "pdf") return "application/pdf";
+  return "application/octet-stream";
+}
+
 function Index() {
   const [sourceLabel, setSourceLabel] = useState<string | null>(null);
   const [txtFiles, setTxtFiles] = useState<File[]>([]);
