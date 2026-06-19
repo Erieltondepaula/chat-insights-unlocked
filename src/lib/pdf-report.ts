@@ -544,19 +544,31 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
 
   // ----- Demands
-  y = sectionTitle(doc, "2. Demandas do Cliente e Retorno/Ações Realizadas", margin, y, contentW);
+  y = sectionTitle(doc, "2. Relatório Detalhado de Demandas e Resoluções Técnicas", margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.3);
+  doc.setTextColor(...TEXT);
+  const introLines = doc.splitTextToSize(
+    "Abaixo constam, de forma sequencial, os principais incidentes reportados pela clínica, acompanhados de suas respectivas datas de abertura, descrições e devolutivas registradas pela equipe Amigo Flow.",
+    contentW,
+  );
+  for (const ln of introLines) {
+    doc.text(ln, margin, y);
+    y += 12;
+  }
+  y += 6;
   for (const d of draft.demands) {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
   // ----- Sections 3-5
-  y = sectionTitle(doc, "3. Situação Atual", margin, y, contentW);
+  y = sectionTitle(doc, "3. Situação Atual", margin, y);
   y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "4. Pendências", margin, y, contentW);
+  y = sectionTitle(doc, "4. Pendências", margin, y);
   y = paragraph(doc, sanitize(draft.pendingItems), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "5. Resumo Executivo", margin, y, contentW);
+  y = sectionTitle(doc, "5. Resumo Executivo", margin, y);
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
   y = titledParagraph(
     doc,
@@ -594,35 +606,150 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
   // ----- Footer with page numbers
   const pageCount = doc.getNumberOfPages();
+  const footerLabel = `Auditoria Amigo Flow — ${sanitize(draft.title)}`.slice(0, 90);
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(120);
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
     doc.setFont("helvetica", "normal");
-    doc.text("Auditoria Flow - Amigo - v1", margin, pageH - 20);
-    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 20, { align: "right" });
+    doc.setDrawColor(...RULE);
+    doc.setLineWidth(0.4);
+    doc.line(margin, pageH - 30, pageW - margin, pageH - 30);
+    doc.text(footerLabel, margin, pageH - 18);
+    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 18, { align: "right" });
   }
   return doc;
 }
 
+// ============================================================
+// DEMAND CARD: blue left bar, date chip in red, ocorrência + resolução sub-box
+// ============================================================
 function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
-  y = ensureSpace(doc, y, 120, x);
-  doc.setFillColor(...SOFT);
-  doc.setDrawColor(220, 230, 222);
-  doc.roundedRect(x, y, w, 22, 3, 3, "FD");
+  // Measure all content first to know card height
+  const innerX = x + 14;
+  const innerW = w - 22;
+
+  const titleText = sanitize(d.titleLabel || "Demanda do cliente");
+  const occText = sanitize(
+    [d.clientDemand, d.clientReports].filter(Boolean).join("\n"),
+  );
+  const resText = sanitize([d.supportActions, d.supportResults].filter(Boolean).join("\n"));
+
+  // pre-compute wrapped sizes
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5);
-  doc.setTextColor(...BRAND);
-  doc.text(`Data (${d.dateLabel})`, x + 10, y + 15);
-  y += 32;
+  const titleLines = doc.splitTextToSize(titleText, innerW - 100);
 
-  const demandText = [d.clientDemand, d.clientReports].filter(Boolean).join("\n");
-  y = titledParagraph(doc, "Demandas do Cliente", sanitize(demandText), x, y, w);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.4);
+  const occLines = wrapMultiline(doc, occText, innerW);
 
-  const actionsText = [d.supportActions, d.supportResults].filter(Boolean).join("\n");
-  y = titledParagraph(doc, "Retorno/Ações Realizadas", sanitize(actionsText), x, y, w);
-  return y + 6;
+  doc.setFontSize(9.2);
+  const resLines = wrapMultiline(doc, resText, innerW - 16);
+
+  const headerH = 16 + titleLines.length * 13;
+  const occH = 14 + occLines.length * 12 + 8;
+  const resH = 14 + resLines.length * 11.5 + 12;
+  const cardH = headerH + occH + resH + 10;
+
+  y = ensureSpace(doc, y, cardH + 8, x);
+
+  // Card background + left blue bar
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, w, cardH, 3, 3, "FD");
+  doc.setFillColor(...BLUE);
+  doc.rect(x, y, 4, cardH, "F");
+
+  // Header line: [DATA] Title
+  let cy = y + 18;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...DATE_RED);
+  const dateLabel = `[${d.dateLabel}]`;
+  doc.text(dateLabel, innerX, cy);
+  const dateW = doc.getTextWidth(dateLabel) + 8;
+
+  doc.setTextColor(...NAVY);
+  doc.setFontSize(10.5);
+  let tx = innerX + dateW;
+  let ty = cy;
+  for (const tl of titleLines) {
+    doc.text(tl, tx, ty);
+    ty += 13;
+    tx = innerX; // continuation lines align to inner left
+  }
+  cy = Math.max(cy + 13, ty);
+  cy += 4;
+
+  // Ocorrência paragraph
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.4);
+  doc.setTextColor(...NAVY);
+  doc.text("Ocorrência:", innerX, cy);
+  const ocLabelW = doc.getTextWidth("Ocorrência:") + 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...TEXT);
+  // first line shares row with the label
+  const firstOcLine = occLines[0] ?? "";
+  const firstSlice = doc.splitTextToSize(firstOcLine, innerW - ocLabelW)[0] ?? firstOcLine;
+  doc.text(firstSlice, innerX + ocLabelW, cy);
+  // remaining occLines render below
+  const remaining = occLines.slice(1);
+  if (firstSlice !== firstOcLine) {
+    const leftover = firstOcLine.slice(firstSlice.length).trim();
+    if (leftover) remaining.unshift(leftover);
+  }
+  cy += 13;
+  for (const ln of remaining) {
+    doc.text(ln, innerX, cy);
+    cy += 12;
+  }
+  cy += 4;
+
+  // Resolution sub-box
+  const resBoxX = innerX;
+  const resBoxW = innerW;
+  const resBoxH = 12 + resLines.length * 11.5 + 8;
+  doc.setFillColor(...RES_BG);
+  doc.setDrawColor(...RES_BORDER);
+  doc.roundedRect(resBoxX, cy, resBoxW, resBoxH, 2, 2, "FD");
+  let ry = cy + 14;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.2);
+  doc.setTextColor(...NAVY);
+  doc.text("Resolução:", resBoxX + 8, ry);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...TEXT);
+  const resLabelW = doc.getTextWidth("Resolução:") + 5;
+  const firstRes = resLines[0] ?? "";
+  const firstResSlice = doc.splitTextToSize(firstRes, resBoxW - resLabelW - 16)[0] ?? firstRes;
+  doc.text(firstResSlice, resBoxX + 8 + resLabelW, ry);
+  const restRes = resLines.slice(1);
+  if (firstResSlice !== firstRes) {
+    const leftover = firstRes.slice(firstResSlice.length).trim();
+    if (leftover) restRes.unshift(leftover);
+  }
+  ry += 12;
+  for (const ln of restRes) {
+    doc.text(ln, resBoxX + 8, ry);
+    ry += 11.5;
+  }
+
+  return y + cardH + 12;
 }
+
+function wrapMultiline(doc: jsPDF, text: string, w: number): string[] {
+  const out: string[] = [];
+  for (const para of text.split("\n")) {
+    if (!para.trim()) continue;
+    const lines = doc.splitTextToSize(para, w) as string[];
+    out.push(...lines);
+  }
+  return out;
+}
+
 
 function titledParagraph(
   doc: jsPDF,
