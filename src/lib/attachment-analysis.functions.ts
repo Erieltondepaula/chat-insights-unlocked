@@ -29,7 +29,11 @@ Não invente dados. Se não houver texto audível/legível, descreva a limitaç�
       content.push({ type: "text", text: `Arquivo: ${file.name}` });
       const fileData = `data:${file.mime};base64,${file.data}`;
       if (file.kind === "image") content.push({ type: "image_url", image_url: { url: fileData } });
-      else if (file.kind === "audio") content.push({ type: "input_audio", input_audio: { data: file.data, format: audioFormat(file.name, file.mime) } });
+      else if (file.kind === "audio")
+        content.push({
+          type: "input_audio",
+          input_audio: { data: file.data, format: audioFormat(file.name, file.mime) },
+        });
       else content.push({ type: "file", file: { filename: file.name, file_data: fileData } });
     }
 
@@ -47,9 +51,11 @@ Não invente dados. Se não houver texto audível/legível, descreva a limitaç�
     });
 
     if (!response.ok) return [] satisfies AttachmentInsight[];
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const raw = json.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, "")) as { items?: AttachmentInsight[] };
+    const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, "")) as {
+      items?: AttachmentInsight[];
+    };
     return (parsed.items ?? []).slice(0, 8);
   });
 
