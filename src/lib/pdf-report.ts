@@ -71,6 +71,8 @@ export function buildDraft(
         ? "Apto a encerramento"
         : "Em avaliação";
 
+  const insightMap = buildInsightMap(attachmentInsights);
+
   const supportSeen = new Map<string, Envolvido>();
   const clientSeen = new Map<string, Envolvido>();
   for (const p of a.participants) {
@@ -93,7 +95,7 @@ export function buildDraft(
   const envolvidos = [...clientSeen.values()]
     .slice(0, 10)
     .concat([...supportSeen.values()].slice(0, 8));
-  const demands = buildDemandBlocks(a, attachmentInsights);
+  const demands = buildDemandBlocks(a, insightMap);
 
   const lastClient = [...a.messages]
     .reverse()
@@ -107,7 +109,7 @@ export function buildDraft(
   const resolved = a.demands.filter((d) => d.status === "resolvido");
   const themes = inferThemes(a);
   const attachmentNotes = attachmentInsights.length
-    ? attachmentInsights.map((i) => `• ${i.name}: ${i.summary}`).join("\n")
+    ? attachmentInsights.map((i) => `• ${attachmentLabel(i)}: ${i.summary}`).join("\n")
     : attachmentSummaryFromCounts(a);
 
   return {
@@ -123,10 +125,10 @@ export function buildDraft(
     demands,
     currentSituation: [
       lastClient
-        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${cleanMsg(lastClient.content)}`
+        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${cleanMsg(lastClient.content, insightMap)}`
         : "Sem contato recente do cliente identificado.",
       lastSupport
-        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${cleanMsg(lastSupport.content)}`
+        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${cleanMsg(lastSupport.content, insightMap)}`
         : "Sem devolutiva recente da equipe Amigo Flow identificada.",
       cv
         ? `Parecer das últimas duas semanas: ${cv.reasons.join(" ")}`
@@ -135,7 +137,7 @@ export function buildDraft(
     pendingItems: pending.length
       ? pending
           .slice(0, 8)
-          .map((d) => `• ${fmtDateOnly(d.date)} — ${cleanMsg(d.message)}`)
+          .map((d) => `• ${fmtDateOnly(d.date)} — ${cleanMsg(d.message, insightMap)}`)
           .join("\n")
       : "Não foram identificadas pendências críticas abertas no histórico analisado.",
     executiveSummary: `A auditoria consolidou as solicitações da clínica e as devolutivas registradas pela equipe Amigo Flow. O foco do relatório é evidenciar demandas relevantes, ações realizadas, validações e pendências atuais sem reproduzir mensagens de saudação ou interações sem valor operacional.`,
@@ -147,7 +149,7 @@ export function buildDraft(
           .slice(0, 8)
           .map(
             (d) =>
-              `• ${fmtDateOnly(d.resolvedAt)} — Devolutiva registrada por ${d.resolvedBy}: ${shortTitle(d.message)}`,
+              `• ${fmtDateOnly(d.resolvedAt)} — Devolutiva registrada por ${d.resolvedBy}: ${shortTitle(cleanMsg(d.message, insightMap))}`,
           )
           .join("\n")
       : "• Não foram identificadas ações conclusivas registradas pela equipe Amigo Flow.",
@@ -167,7 +169,40 @@ export function buildDraft(
   };
 }
 
-function buildDemandBlocks(a: Analysis, attachmentInsights: AttachmentInsight[]): DemandItem[] {
+type InsightMap = Map<string, AttachmentInsight>;
+
+function buildInsightMap(insights: AttachmentInsight[]): InsightMap {
+  const map = new Map<string, AttachmentInsight>();
+  for (const i of insights) {
+    if (!i?.name) continue;
+    map.set(i.name.toLowerCase(), i);
+    const base = i.name.split(/[\\/]/).pop()?.toLowerCase();
+    if (base) map.set(base, i);
+  }
+  return map;
+}
+
+function attachmentLabel(i: AttachmentInsight): string {
+  if (i.type === "image") return "Imagem enviada pela clínica";
+  if (i.type === "audio") return "Áudio enviado pela clínica";
+  if (i.type === "document") return "Documento enviado pela clínica";
+  return "Anexo enviado pela clínica";
+}
+
+function genericAttachmentContext(kind: string): string {
+  const k = kind.toLowerCase();
+  if (k.startsWith("im") || k.startsWith("foto"))
+    return "imagem enviada pela clínica como contexto da demanda";
+  if (k.startsWith("víd") || k.startsWith("vid"))
+    return "vídeo enviado pela clínica como contexto da demanda";
+  if (k.startsWith("áud") || k.startsWith("aud") || k === "ptt")
+    return "áudio enviado pela clínica como contexto da demanda";
+  if (k.startsWith("doc") || k === "pdf")
+    return "documento enviado pela clínica como contexto da demanda";
+  return "anexo enviado pela clínica como contexto da demanda";
+}
+
+function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
   const grouped = new Map<string, typeof a.demands>();
   for (const d of a.demands) {
     const key = d.date.toISOString().slice(0, 10);
@@ -182,24 +217,16 @@ function buildDemandBlocks(a: Analysis, attachmentInsights: AttachmentInsight[])
       const resolved = items.filter((d) => d.status === "resolvido");
       const relevant = items
         .slice(0, 3)
-        .map((d) => `“${cleanMsg(d.message)}” — ${d.requester}`)
+        .map((d) => `“${cleanMsg(d.message, insightMap)}” — ${d.requester}`)
         .join("\n");
-      const mediaForBlock = attachmentInsights
-        .slice(0, 4)
-        .filter((i) => keyFromName(i.name) === key);
       return {
         dateLabel: fmtDateOnly(date),
-        titleLabel: shortTitle(items[0]?.message ?? "Demanda do cliente"),
-        clientDemand: items.map((d) => `• ${cleanMsg(d.message)}`).join("\n"),
+        titleLabel: shortTitle(cleanMsg(items[0]?.message ?? "Demanda do cliente", insightMap)),
+        clientDemand: items.map((d) => `• ${cleanMsg(d.message, insightMap)}`).join("\n"),
         clientReports: pending.length
           ? `${pending.length} item(ns) sem resolução explícita até o fechamento da auditoria.`
           : "As solicitações do dia possuem devolutiva vinculada no histórico analisado.",
-        relevantQuotes: [
-          relevant,
-          ...mediaForBlock.map((m) => `Anexo interpretado — ${m.name}: ${m.summary}`),
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        relevantQuotes: relevant,
         supportActions: resolved.length
           ? resolved
               .map(
@@ -414,12 +441,39 @@ function lastY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 }
 
-function cleanMsg(s: string): string {
-  return s
-    .replace(/<[^>]+>/g, "[anexo]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 360);
+function cleanMsg(s: string, insightMap?: InsightMap): string {
+  let out = s.replace(/<[^>]+>/g, "[anexo]");
+  const mediaExt =
+    "jpe?g|png|webp|gif|bmp|heic|heif|mp4|mov|3gp|webm|opus|ogg|mp3|m4a|wav|aac|flac|pdf|docx?|xlsx?|pptx?";
+  // "[Imagem enviado pela clínica] IMG-20260521-WA0134.jpg (arquivo anexado)"
+  out = out.replace(
+    new RegExp(
+      `\\[\\s*(Imagem|Imagens|Foto|V[ií]deo|[ÁA]udio|Documento|PDF|Anexo)[^\\]]*\\]\\s*([\\w.\\-]+\\.(?:${mediaExt}))\\s*(?:\\(arquivo anexado\\)|\\(arquivo\\))?`,
+      "gi",
+    ),
+    (_m: string, kind: string, filename: string) => describeAttachment(kind, filename, insightMap),
+  );
+  // bare filenames left over
+  out = out.replace(
+    new RegExp(`\\b([\\w.\\-]+\\.(?:${mediaExt}))\\b\\s*(?:\\(arquivo anexado\\))?`, "gi"),
+    (_m: string, filename: string) => describeAttachment(extKind(filename), filename, insightMap),
+  );
+  return out.replace(/\s+/g, " ").trim().slice(0, 420);
+}
+
+function describeAttachment(kind: string, filename: string, insightMap?: InsightMap): string {
+  const ins = insightMap?.get(filename.toLowerCase());
+  if (ins?.summary)
+    return `[Contexto interpretado por IA — ${attachmentLabel(ins)}: ${ins.summary}]`;
+  return `[${genericAttachmentContext(kind)}]`;
+}
+
+function extKind(filename: string): string {
+  const ext = filename.toLowerCase().split(".").pop() ?? "";
+  if (["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif"].includes(ext)) return "imagem";
+  if (["mp4", "mov", "3gp", "webm"].includes(ext)) return "vídeo";
+  if (["opus", "ogg", "mp3", "m4a", "wav", "aac", "flac"].includes(ext)) return "áudio";
+  return "documento";
 }
 
 function shortTitle(s: string): string {
