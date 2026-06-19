@@ -799,17 +799,19 @@ function centered(doc: jsPDF, text: string, y: number, w: number, centerX: numbe
   return y;
 }
 
-function sectionTitle(doc: jsPDF, t: string, x: number, y: number, w: number): number {
+// Section title styled like the reference: blue left bar + navy bold heading
+function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
   y = ensureSpace(doc, y, 36, x);
+  const h = 18;
+  doc.setFillColor(...BLUE);
+  doc.rect(x, y - 2, 4, h, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...BRAND);
-  doc.text(t, x, y);
-  doc.setDrawColor(...BRAND);
-  doc.setLineWidth(0.6);
-  doc.line(x, y + 4, x + w, y + 4);
-  return y + 18;
+  doc.setFontSize(12.5);
+  doc.setTextColor(...NAVY);
+  doc.text(sanitize(t), x + 12, y + 12);
+  return y + h + 10;
 }
+
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
