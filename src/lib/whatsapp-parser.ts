@@ -359,8 +359,10 @@ export function analyze(messages: Message[]): Analysis {
   for (let i = 0; i < nonSys.length; i++) {
     const m = nonSys[i];
     if (!m.author || isAmigoFlowSupport(m.author) || isGreetingOrNoise(m.content)) continue;
+    if (isOffTopicMeeting(m.content)) continue;
     if (!isDemand(m.content) && !m.hasMedia) continue;
     const demand: Demand = {
+
       date: m.date,
       requester: m.author,
       message: m.hasMedia
