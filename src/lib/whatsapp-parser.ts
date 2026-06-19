@@ -15,6 +15,8 @@ export type Demand = {
   resolvedBy?: string;
   resolvedAt?: Date;
   resolutionMessage?: string;
+  clientFollowUp?: string;
+  clientFollowUpAt?: Date;
   status: "pendente" | "resolvido";
 };
 
@@ -379,12 +381,19 @@ export function analyze(messages: Message[]): Analysis {
         : m.content.slice(0, 280),
       status: "pendente",
     };
-    const cutoff = m.date.getTime() + 1000 * 60 * 60 * 72;
+    // Janela aumentada para 5 dias: uma devolutiva do dia seguinte (ou alguns
+    // dias depois) ainda deve ser vinculada à demanda original.
+    const cutoff = m.date.getTime() + 1000 * 60 * 60 * 24 * 5;
+    let resolutionIndex = -1;
     for (let j = i + 1; j < nonSys.length; j++) {
       const r = nonSys[j];
       if (r.date.getTime() > cutoff) break;
       const supportName = getAmigoFlowSupportName(r.author);
       if (!supportName) continue;
+      // Ignora devolutivas cujo conteúdo é apenas sobre link/convite — não
+      // representam ação operacional sobre o Flow.
+      if (LINK_RE.test(r.content)) continue;
+      if (isOffTopicMeeting(r.content)) continue;
       if (isResolution(r.content) || r.hasMedia) {
         demand.resolvedBy = supportName;
         demand.resolvedAt = r.date;
@@ -392,6 +401,26 @@ export function analyze(messages: Message[]): Analysis {
           ? `[${mediaTypeLabel(r.mediaType)} enviado pelo suporte] ${r.content}`.slice(0, 400)
           : r.content.slice(0, 400);
         demand.status = "resolvido";
+        resolutionIndex = j;
+        break;
+      }
+    }
+    // Após devolutiva, captura a próxima resposta do cliente (mesmo solicitante
+    // ou outro autor não-suporte) em até 48h — apenas se realmente existir.
+    if (resolutionIndex >= 0) {
+      const respCutoff = demand.resolvedAt!.getTime() + 1000 * 60 * 60 * 48;
+      for (let k = resolutionIndex + 1; k < nonSys.length; k++) {
+        const f = nonSys[k];
+        if (f.date.getTime() > respCutoff) break;
+        if (!f.author || getAmigoFlowSupportName(f.author)) continue;
+        if (isGreetingOrNoise(f.content)) continue;
+        if (LINK_RE.test(f.content)) continue;
+        const txt = f.hasMedia
+          ? `[${mediaTypeLabel(f.mediaType)} enviado pela clínica] ${f.content}`.trim()
+          : f.content.trim();
+        if (!txt) continue;
+        demand.clientFollowUp = txt.slice(0, 320);
+        demand.clientFollowUpAt = f.date;
         break;
       }
     }
