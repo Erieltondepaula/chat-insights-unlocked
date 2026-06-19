@@ -295,25 +295,26 @@ export function analyze(messages: Message[]): Analysis {
     if (m.date > p.lastSeen) p.lastSeen = m.date;
   }
 
-  // Demands: scan and try to pair with resolution within next 48h by any participant
+  // Demands: clínica solicita; Equipe Amigo Flow devolve. Outros números não resolvem demanda.
   const demands: Demand[] = [];
   for (let i = 0; i < nonSys.length; i++) {
     const m = nonSys[i];
-    if (!m.author || m.hasMedia) continue;
-    if (!isDemand(m.content)) continue;
+    if (!m.author || isAmigoFlowSupport(m.author) || isGreetingOrNoise(m.content)) continue;
+    if (!isDemand(m.content) && !m.hasMedia) continue;
     const demand: Demand = {
       date: m.date,
       requester: m.author,
-      message: m.content.slice(0, 280),
+      message: m.hasMedia ? `[${mediaTypeLabel(m.mediaType)} enviado pela clínica] ${m.content}`.slice(0, 280) : m.content.slice(0, 280),
       status: "pendente",
     };
-    const cutoff = m.date.getTime() + 1000 * 60 * 60 * 48;
+    const cutoff = m.date.getTime() + 1000 * 60 * 60 * 72;
     for (let j = i + 1; j < nonSys.length; j++) {
       const r = nonSys[j];
       if (r.date.getTime() > cutoff) break;
-      if (!r.author || r.author === m.author) continue;
+      const supportName = getAmigoFlowSupportName(r.author);
+      if (!supportName) continue;
       if (isResolution(r.content) || r.hasMedia) {
-        demand.resolvedBy = r.author;
+        demand.resolvedBy = supportName;
         demand.resolvedAt = r.date;
         demand.status = "resolvido";
         break;
@@ -323,8 +324,12 @@ export function analyze(messages: Message[]): Analysis {
     const req = pmap.get(m.author);
     if (req) req.demandsRequested++;
     if (demand.resolvedBy) {
-      const res = pmap.get(demand.resolvedBy);
-      if (res) res.demandsResolved++;
+      for (const p of pmap.values()) {
+        if (getAmigoFlowSupportName(p.name) === demand.resolvedBy) {
+          p.demandsResolved++;
+          break;
+        }
+      }
     }
   }
 
@@ -466,4 +471,12 @@ export function analyze(messages: Message[]): Analysis {
     systemEvents: sys.map((s) => ({ date: s.date, content: s.content })),
     closureVerdict,
   };
+}
+
+function mediaTypeLabel(type: Message["mediaType"] | undefined): string {
+  if (type === "image") return "Imagem";
+  if (type === "audio") return "Áudio";
+  if (type === "document") return "Documento/PDF";
+  if (type === "video") return "Vídeo";
+  return "Anexo";
 }
