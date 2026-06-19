@@ -8,10 +8,20 @@ import {
   type Demand,
 } from "./whatsapp-parser";
 
-const BRAND: [number, number, number] = [20, 83, 45];
-const TEXT: [number, number, number] = [32, 32, 32];
-const MUTED: [number, number, number] = [100, 100, 100];
-const SOFT: [number, number, number] = [245, 249, 246];
+// Palette tuned to the v2 reference layout
+const NAVY: [number, number, number] = [14, 58, 95]; // #0E3A5F — titles, section headers
+const NAVY_DEEP: [number, number, number] = [26, 61, 110]; // #1A3D6E — table header
+const BLUE: [number, number, number] = [46, 111, 184]; // #2E6FB8 — accent bars, links
+const TEXT: [number, number, number] = [38, 47, 60]; // body text
+const MUTED: [number, number, number] = [110, 120, 132];
+const INFO_BG: [number, number, number] = [238, 243, 248]; // #EEF3F8 — info / chip bg
+const RES_BG: [number, number, number] = [234, 242, 251]; // #EAF2FB — resolution sub-box
+const RES_BORDER: [number, number, number] = [185, 211, 235];
+const ALERT_BG: [number, number, number] = [253, 235, 235];
+const ALERT_BORDER: [number, number, number] = [192, 57, 43];
+const DATE_RED: [number, number, number] = [192, 57, 43];
+const RULE: [number, number, number] = [221, 228, 236];
+
 
 const fmtDateOnly = (d: Date | null | undefined) => (d ? d.toLocaleDateString("pt-BR") : "—");
 
