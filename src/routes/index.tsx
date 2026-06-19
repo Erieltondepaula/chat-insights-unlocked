@@ -212,7 +212,7 @@ function Index() {
   function downloadPdf() {
     if (!draft) return;
     const doc = generatePdf(draft);
-    const fname = (draft.title || "relatorio").replace(/[^\w\-]+/g, "_").slice(0, 60);
+    const fname = (draft.title || "relatorio").replace(/[^\w-]+/g, "_").slice(0, 60);
     doc.save(`${fname}.pdf`);
   }
 
