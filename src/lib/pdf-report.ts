@@ -481,12 +481,6 @@ function shortTitle(s: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-function keyFromName(name: string): string | null {
-  const m = name.match(/(\d{4})[-_]?([01]\d)[-_]?([0-3]\d)|([0-3]\d)[-.]([01]\d)[-.](\d{4})/);
-  if (!m) return null;
-  if (m[1]) return `${m[1]}-${m[2]}-${m[3]}`;
-  return `${m[6]}-${m[5]}-${m[4]}`;
-}
 
 function inferThemes(a: Analysis): string[] {
   const corpus = a.messages.map((m) => m.content.toLowerCase()).join(" ");
