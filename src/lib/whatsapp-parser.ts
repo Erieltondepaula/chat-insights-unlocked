@@ -64,6 +64,49 @@ export type ParticipantStats = {
   percentage: number;
 };
 
+export const AMIGO_FLOW_SUPPORT_TEAM = [
+  { name: "Lucas", phones: ["5511974281428", "5511933831516"] },
+  { name: "Roberta", phones: ["5511911146922"] },
+  { name: "Bruno", phones: ["5511917946785"] },
+  { name: "Iuri", phones: ["5511941091267"] },
+  { name: "Ian", phones: ["5511973663674"] },
+  { name: "Erielton", phones: ["5527996932233"] },
+  { name: "Patricia", phones: ["5511974607685"] },
+  { name: "Qualidade", phones: ["5511914199570"] },
+] as const;
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function normalizeName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function getAmigoFlowSupportName(author: string | null | undefined): string | null {
+  if (!author) return null;
+  const digits = onlyDigits(author);
+  const normalized = normalizeName(author);
+  for (const member of AMIGO_FLOW_SUPPORT_TEAM) {
+    if (member.phones.some((phone) => digits.includes(phone) || digits.endsWith(phone.slice(2)))) return member.name;
+    const memberName = normalizeName(member.name);
+    if (normalized === memberName || normalized.startsWith(`${memberName} `) || normalized.includes(` ${memberName} `)) {
+      return member.name;
+    }
+  }
+  return null;
+}
+
+export function isAmigoFlowSupport(author: string | null | undefined): boolean {
+  return Boolean(getAmigoFlowSupportName(author));
+}
+
 // Matches start of a WA line; supports multiple date formats
 // Android pt-BR: 12/03/2024 14:32 - Author: message
 // iOS pt-BR: [12/03/2024, 14:32:10] Author: message
@@ -78,12 +121,12 @@ function parseDateParts(d: string, m: string, y: string, h: string, mi: string, 
 }
 
 const MEDIA_PATTERNS: { re: RegExp; type: Message["mediaType"] }[] = [
-  { re: /<Mídia oculta>|<arquivo de mídia oculto>|<Media omitted>|image omitted|imagem ocultada/i, type: "image" },
-  { re: /vídeo ocultado|video omitted/i, type: "video" },
-  { re: /áudio ocultado|audio omitted|ptt-/i, type: "audio" },
+  { re: /<Mídia oculta>|<arquivo de mídia oculto>|<Media omitted>|image omitted|imagem ocultada|\bIMG[-_\w\d]*\.(?:jpe?g|png|webp|gif)|\.(?:jpe?g|png|webp|gif)\b/i, type: "image" },
+  { re: /vídeo ocultado|video omitted|\bVID[-_\w\d]*\.(?:mp4|mov|3gp|webm)|\.(?:mp4|mov|3gp|webm)\b/i, type: "video" },
+  { re: /áudio ocultado|audio omitted|ptt-|\bPTT[-_\w\d]*\.(?:opus|ogg|mp3|m4a|wav)|\.(?:opus|ogg|mp3|m4a|wav|aac|flac)\b/i, type: "audio" },
   { re: /sticker omitted|figurinha omitida/i, type: "sticker" },
   { re: /GIF omitted|GIF omitida/i, type: "gif" },
-  { re: /documento omitido|document omitted/i, type: "document" },
+  { re: /documento omitido|document omitted|\.(?:pdf|docx?|xlsx?|pptx?|csv|txt)\b/i, type: "document" },
 ];
 
 function detectMedia(content: string): { hasMedia: boolean; type?: Message["mediaType"] } {
@@ -178,13 +221,27 @@ const RESOLUTION_KEYWORDS = [
   /\bok\b/i,
   /\benviado\b|\benviei\b/i,
   /\bsegue\b/i,
+  /\bajustad\w*\b/i,
+  /\bcorrigid\w*\b/i,
+  /\bvalidad\w*\b/i,
+  /\borientad\w*\b/i,
+  /\bencaminhad\w*\b/i,
 ];
 
+const GREETING_RE = /^(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|td bem|obrigad[ao]|valeu|ok|okay|certo|perfeito|show|beleza|por nada|de nada|👍|🙏|👏|✅|\s)+[!.?\s]*$/i;
+
+export function isGreetingOrNoise(content: string): boolean {
+  const cleaned = content.replace(/[\u200e\u200f]/g, "").trim();
+  return cleaned.length <= 40 && GREETING_RE.test(cleaned);
+}
+
 function isDemand(content: string): boolean {
+  if (isGreetingOrNoise(content)) return false;
   return DEMAND_KEYWORDS.some((r) => r.test(content));
 }
 
 function isResolution(content: string): boolean {
+  if (isGreetingOrNoise(content)) return false;
   return RESOLUTION_KEYWORDS.some((r) => r.test(content));
 }
 
