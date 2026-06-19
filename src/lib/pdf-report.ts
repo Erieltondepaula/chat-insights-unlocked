@@ -8,10 +8,20 @@ import {
   type Demand,
 } from "./whatsapp-parser";
 
-const BRAND: [number, number, number] = [20, 83, 45];
-const TEXT: [number, number, number] = [32, 32, 32];
-const MUTED: [number, number, number] = [100, 100, 100];
-const SOFT: [number, number, number] = [245, 249, 246];
+// Palette tuned to the v2 reference layout
+const NAVY: [number, number, number] = [14, 58, 95]; // #0E3A5F — titles, section headers
+const NAVY_DEEP: [number, number, number] = [26, 61, 110]; // #1A3D6E — table header
+const BLUE: [number, number, number] = [46, 111, 184]; // #2E6FB8 — accent bars, links
+const TEXT: [number, number, number] = [38, 47, 60]; // body text
+const MUTED: [number, number, number] = [110, 120, 132];
+const INFO_BG: [number, number, number] = [238, 243, 248]; // #EEF3F8 — info / chip bg
+const RES_BG: [number, number, number] = [234, 242, 251]; // #EAF2FB — resolution sub-box
+const RES_BORDER: [number, number, number] = [185, 211, 235];
+const ALERT_BG: [number, number, number] = [253, 235, 235];
+const ALERT_BORDER: [number, number, number] = [192, 57, 43];
+const DATE_RED: [number, number, number] = [192, 57, 43];
+const RULE: [number, number, number] = [221, 228, 236];
+
 
 const fmtDateOnly = (d: Date | null | undefined) => (d ? d.toLocaleDateString("pt-BR") : "—");
 
@@ -431,74 +441,134 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   const contentW = pageW - margin * 2;
   let y = margin;
 
-  // ----- Header
-  doc.setTextColor(...TEXT);
+  // ----- Header: big bold navy title, left-aligned subtitle, info box
+  doc.setTextColor(...NAVY);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  y = centered(doc, sanitize(draft.title), y + 4, contentW, pageW / 2);
+  doc.setFontSize(22);
+  const titleLines = doc.splitTextToSize(sanitize(draft.title), contentW);
+  for (const line of titleLines.slice(0, 3)) {
+    doc.text(line, margin, y + 18);
+    y += 24;
+  }
+  y += 4;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.setFontSize(10.5);
   doc.setTextColor(...MUTED);
-  y = centered(doc, sanitize(draft.subtitle), y + 6, contentW, pageW / 2) + 10;
-  y = paragraph(doc, sanitize(draft.periodSummary), margin, y, contentW, 9.5, "normal") + 12;
+  doc.text(sanitize(draft.subtitle), margin, y);
+  y += 18;
 
-  // ----- Identification table
-  autoTable(doc, {
-    startY: y,
-    theme: "grid",
-    styles: { fontSize: 9, cellPadding: 6, valign: "top", lineColor: [220, 220, 220] },
-    columnStyles: {
-      0: { fontStyle: "bold", fillColor: SOFT, cellWidth: 125 },
-      2: { fontStyle: "bold", fillColor: SOFT, cellWidth: 120 },
-    },
-    body: [
-      ["Cliente Contratante", sanitize(draft.clientName), "Data de Emissão", draft.emissionDate],
-      ["Módulo Auditado", draft.moduleAudited, "Status Atual", draft.status],
-      ["Data de Início do Grupo", draft.groupCreatedAt, "", ""],
-    ],
-    margin: { left: margin, right: margin },
-  });
-  y = lastY(doc) + 20;
+  // Info box (light grey-blue bg, no borders, two columns)
+  const infoRows: [string, string, string, string][] = [
+    ["Cliente Contratante:", sanitize(draft.clientName), "Data de Emissão:", draft.emissionDate],
+    ["Módulo Auditado:", draft.moduleAudited, "Status Atual:", draft.status],
+    ["Data de Início do Grupo:", draft.groupCreatedAt, "", ""],
+  ];
+  const infoRowH = 26;
+  const infoH = infoRows.length * infoRowH + 10;
+  doc.setFillColor(...INFO_BG);
+  doc.roundedRect(margin, y, contentW, infoH, 4, 4, "F");
+  let infoY = y + 18;
+  const colW = contentW / 2;
+  for (const [l1, v1, l2, v2] of infoRows) {
+    doc.setTextColor(...NAVY);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text(l1, margin + 12, infoY);
+    const l1W = doc.getTextWidth(l1) + 4;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXT);
+    const v1Lines = doc.splitTextToSize(sanitize(v1), colW - 24 - l1W);
+    doc.text(v1Lines[0] ?? "", margin + 12 + l1W, infoY);
+    if (l2) {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...NAVY);
+      doc.text(l2, margin + colW + 6, infoY);
+      const l2W = doc.getTextWidth(l2) + 4;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...TEXT);
+      const v2Lines = doc.splitTextToSize(sanitize(v2), colW - 18 - l2W);
+      doc.text(v2Lines[0] ?? "", margin + colW + 6 + l2W, infoY);
+    }
+    infoY += infoRowH;
+  }
+  y += infoH + 6;
+
+  // thin blue rule like the reference
+  doc.setDrawColor(...BLUE);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, margin + contentW, y);
+  y += 18;
+
+  // Period summary (small, muted)
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  for (const ln of doc.splitTextToSize(sanitize(draft.periodSummary), contentW)) {
+    doc.text(ln, margin, y);
+    y += 12;
+  }
+  y += 8;
 
   // ----- Envolvidos
   if (draft.envolvidos.length) {
-    y = sectionTitle(
-      doc,
-      "1. Contratantes, Colaboradores e Equipe de Suporte Cadastrados",
-      margin,
-      y,
-      contentW,
-    );
+    y = sectionTitle(doc, "1. Contratantes, Colaboradores e Equipe de Suporte", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Nome do Envolvido", "Organização", "Papel / Atribuição no Processo"]],
       body: draft.envolvidos.map((p) => [sanitize(p.name), p.org, sanitize(p.role)]),
-      headStyles: { fillColor: BRAND, textColor: 255, fontSize: 8.8, halign: "left" },
-      styles: { fontSize: 8.8, cellPadding: 5, valign: "top" },
-      columnStyles: {
-        0: { cellWidth: 145, fontStyle: "bold" },
-        1: { cellWidth: 105 },
-        2: { cellWidth: contentW - 250 },
+      headStyles: {
+        fillColor: NAVY_DEEP,
+        textColor: 255,
+        fontSize: 9.5,
+        fontStyle: "bold",
+        halign: "left",
+        cellPadding: 7,
       },
+      styles: {
+        fontSize: 9.2,
+        cellPadding: 7,
+        valign: "top",
+        lineColor: RULE,
+        textColor: TEXT,
+      },
+      columnStyles: {
+        0: { cellWidth: 150, fontStyle: "bold" },
+        1: { cellWidth: 110, fillColor: INFO_BG, textColor: BLUE, fontStyle: "bold" },
+        2: { cellWidth: contentW - 260 },
+      },
+      alternateRowStyles: { fillColor: [255, 255, 255] },
       margin: { left: margin, right: margin },
     });
-    y = lastY(doc) + 18;
+    y = lastY(doc) + 22;
   }
 
+
   // ----- Demands
-  y = sectionTitle(doc, "2. Demandas do Cliente e Retorno/Ações Realizadas", margin, y, contentW);
+  y = sectionTitle(doc, "2. Relatório Detalhado de Demandas e Resoluções Técnicas", margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.3);
+  doc.setTextColor(...TEXT);
+  const introLines = doc.splitTextToSize(
+    "Abaixo constam, de forma sequencial, os principais incidentes reportados pela clínica, acompanhados de suas respectivas datas de abertura, descrições e devolutivas registradas pela equipe Amigo Flow.",
+    contentW,
+  );
+  for (const ln of introLines) {
+    doc.text(ln, margin, y);
+    y += 12;
+  }
+  y += 6;
   for (const d of draft.demands) {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
   // ----- Sections 3-5
-  y = sectionTitle(doc, "3. Situação Atual", margin, y, contentW);
+  y = sectionTitle(doc, "3. Situação Atual", margin, y);
   y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "4. Pendências", margin, y, contentW);
+  y = sectionTitle(doc, "4. Pendências", margin, y);
   y = paragraph(doc, sanitize(draft.pendingItems), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "5. Resumo Executivo", margin, y, contentW);
+  y = sectionTitle(doc, "5. Resumo Executivo", margin, y);
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
   y = titledParagraph(
     doc,
@@ -536,35 +606,150 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
   // ----- Footer with page numbers
   const pageCount = doc.getNumberOfPages();
+  const footerLabel = `Auditoria Amigo Flow — ${sanitize(draft.title)}`.slice(0, 90);
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(120);
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
     doc.setFont("helvetica", "normal");
-    doc.text("Auditoria Flow - Amigo - v1", margin, pageH - 20);
-    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 20, { align: "right" });
+    doc.setDrawColor(...RULE);
+    doc.setLineWidth(0.4);
+    doc.line(margin, pageH - 30, pageW - margin, pageH - 30);
+    doc.text(footerLabel, margin, pageH - 18);
+    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 18, { align: "right" });
   }
   return doc;
 }
 
+// ============================================================
+// DEMAND CARD: blue left bar, date chip in red, ocorrência + resolução sub-box
+// ============================================================
 function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
-  y = ensureSpace(doc, y, 120, x);
-  doc.setFillColor(...SOFT);
-  doc.setDrawColor(220, 230, 222);
-  doc.roundedRect(x, y, w, 22, 3, 3, "FD");
+  // Measure all content first to know card height
+  const innerX = x + 14;
+  const innerW = w - 22;
+
+  const titleText = sanitize(d.titleLabel || "Demanda do cliente");
+  const occText = sanitize(
+    [d.clientDemand, d.clientReports].filter(Boolean).join("\n"),
+  );
+  const resText = sanitize([d.supportActions, d.supportResults].filter(Boolean).join("\n"));
+
+  // pre-compute wrapped sizes
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5);
-  doc.setTextColor(...BRAND);
-  doc.text(`Data (${d.dateLabel})`, x + 10, y + 15);
-  y += 32;
+  const titleLines = doc.splitTextToSize(titleText, innerW - 100);
 
-  const demandText = [d.clientDemand, d.clientReports].filter(Boolean).join("\n");
-  y = titledParagraph(doc, "Demandas do Cliente", sanitize(demandText), x, y, w);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.4);
+  const occLines = wrapMultiline(doc, occText, innerW);
 
-  const actionsText = [d.supportActions, d.supportResults].filter(Boolean).join("\n");
-  y = titledParagraph(doc, "Retorno/Ações Realizadas", sanitize(actionsText), x, y, w);
-  return y + 6;
+  doc.setFontSize(9.2);
+  const resLines = wrapMultiline(doc, resText, innerW - 16);
+
+  const headerH = 16 + titleLines.length * 13;
+  const occH = 14 + occLines.length * 12 + 8;
+  const resH = 14 + resLines.length * 11.5 + 12;
+  const cardH = headerH + occH + resH + 10;
+
+  y = ensureSpace(doc, y, cardH + 8, x);
+
+  // Card background + left blue bar
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, w, cardH, 3, 3, "FD");
+  doc.setFillColor(...BLUE);
+  doc.rect(x, y, 4, cardH, "F");
+
+  // Header line: [DATA] Title
+  let cy = y + 18;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...DATE_RED);
+  const dateLabel = `[${d.dateLabel}]`;
+  doc.text(dateLabel, innerX, cy);
+  const dateW = doc.getTextWidth(dateLabel) + 8;
+
+  doc.setTextColor(...NAVY);
+  doc.setFontSize(10.5);
+  let tx = innerX + dateW;
+  let ty = cy;
+  for (const tl of titleLines) {
+    doc.text(tl, tx, ty);
+    ty += 13;
+    tx = innerX; // continuation lines align to inner left
+  }
+  cy = Math.max(cy + 13, ty);
+  cy += 4;
+
+  // Ocorrência paragraph
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.4);
+  doc.setTextColor(...NAVY);
+  doc.text("Ocorrência:", innerX, cy);
+  const ocLabelW = doc.getTextWidth("Ocorrência:") + 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...TEXT);
+  // first line shares row with the label
+  const firstOcLine = occLines[0] ?? "";
+  const firstSlice = doc.splitTextToSize(firstOcLine, innerW - ocLabelW)[0] ?? firstOcLine;
+  doc.text(firstSlice, innerX + ocLabelW, cy);
+  // remaining occLines render below
+  const remaining = occLines.slice(1);
+  if (firstSlice !== firstOcLine) {
+    const leftover = firstOcLine.slice(firstSlice.length).trim();
+    if (leftover) remaining.unshift(leftover);
+  }
+  cy += 13;
+  for (const ln of remaining) {
+    doc.text(ln, innerX, cy);
+    cy += 12;
+  }
+  cy += 4;
+
+  // Resolution sub-box
+  const resBoxX = innerX;
+  const resBoxW = innerW;
+  const resBoxH = 12 + resLines.length * 11.5 + 8;
+  doc.setFillColor(...RES_BG);
+  doc.setDrawColor(...RES_BORDER);
+  doc.roundedRect(resBoxX, cy, resBoxW, resBoxH, 2, 2, "FD");
+  let ry = cy + 14;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.2);
+  doc.setTextColor(...NAVY);
+  doc.text("Resolução:", resBoxX + 8, ry);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...TEXT);
+  const resLabelW = doc.getTextWidth("Resolução:") + 5;
+  const firstRes = resLines[0] ?? "";
+  const firstResSlice = doc.splitTextToSize(firstRes, resBoxW - resLabelW - 16)[0] ?? firstRes;
+  doc.text(firstResSlice, resBoxX + 8 + resLabelW, ry);
+  const restRes = resLines.slice(1);
+  if (firstResSlice !== firstRes) {
+    const leftover = firstRes.slice(firstResSlice.length).trim();
+    if (leftover) restRes.unshift(leftover);
+  }
+  ry += 12;
+  for (const ln of restRes) {
+    doc.text(ln, resBoxX + 8, ry);
+    ry += 11.5;
+  }
+
+  return y + cardH + 12;
 }
+
+function wrapMultiline(doc: jsPDF, text: string, w: number): string[] {
+  const out: string[] = [];
+  for (const para of text.split("\n")) {
+    if (!para.trim()) continue;
+    const lines = doc.splitTextToSize(para, w) as string[];
+    out.push(...lines);
+  }
+  return out;
+}
+
 
 function titledParagraph(
   doc: jsPDF,
@@ -614,17 +799,19 @@ function centered(doc: jsPDF, text: string, y: number, w: number, centerX: numbe
   return y;
 }
 
-function sectionTitle(doc: jsPDF, t: string, x: number, y: number, w: number): number {
+// Section title styled like the reference: blue left bar + navy bold heading
+function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
   y = ensureSpace(doc, y, 36, x);
+  const h = 18;
+  doc.setFillColor(...BLUE);
+  doc.rect(x, y - 2, 4, h, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...BRAND);
-  doc.text(t, x, y);
-  doc.setDrawColor(...BRAND);
-  doc.setLineWidth(0.6);
-  doc.line(x, y + 4, x + w, y + 4);
-  return y + 18;
+  doc.setFontSize(12.5);
+  doc.setTextColor(...NAVY);
+  doc.text(sanitize(t), x + 12, y + 12);
+  return y + h + 10;
 }
+
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
