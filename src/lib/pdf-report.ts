@@ -73,7 +73,8 @@ function sanitize(input: string): string {
   // Surrogate pairs (most emojis live in non-BMP range)
   s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "");
   // Symbol / emoji-ish chars that ARE in BMP
-  s = s.replace(/[\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u3000-\u303F\u1F000-\u1FFFF]/g, "");
+  s = s.replace(/[\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u3000-\u303F]/g, "");
+  s = s.replace(/[\u{1F000}-\u{1FFFF}]/gu, "");
   // Replace any control chars
   s = s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
   return s;
