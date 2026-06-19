@@ -36,7 +36,14 @@ export type Analysis = {
   groupCreatedAt?: Date | null;
   groupName?: string | null;
   participants: ParticipantStats[];
-  mediaCount: { image: number; video: number; audio: number; document: number; sticker: number; gif: number };
+  mediaCount: {
+    image: number;
+    video: number;
+    audio: number;
+    document: number;
+    sticker: number;
+    gif: number;
+  };
   demands: Demand[];
   demandStats: {
     total: number;
@@ -94,9 +101,14 @@ export function getAmigoFlowSupportName(author: string | null | undefined): stri
   const digits = onlyDigits(author);
   const normalized = normalizeName(author);
   for (const member of AMIGO_FLOW_SUPPORT_TEAM) {
-    if (member.phones.some((phone) => digits.includes(phone) || digits.endsWith(phone.slice(2)))) return member.name;
+    if (member.phones.some((phone) => digits.includes(phone) || digits.endsWith(phone.slice(2))))
+      return member.name;
     const memberName = normalizeName(member.name);
-    if (normalized === memberName || normalized.startsWith(`${memberName} `) || normalized.includes(` ${memberName} `)) {
+    if (
+      normalized === memberName ||
+      normalized.startsWith(`${memberName} `) ||
+      normalized.includes(` ${memberName} `)
+    ) {
       return member.name;
     }
   }
@@ -117,16 +129,35 @@ const LINE_REGEX =
 function parseDateParts(d: string, m: string, y: string, h: string, mi: string, s?: string): Date {
   let year = parseInt(y, 10);
   if (year < 100) year += 2000;
-  return new Date(year, parseInt(m, 10) - 1, parseInt(d, 10), parseInt(h, 10), parseInt(mi, 10), s ? parseInt(s, 10) : 0);
+  return new Date(
+    year,
+    parseInt(m, 10) - 1,
+    parseInt(d, 10),
+    parseInt(h, 10),
+    parseInt(mi, 10),
+    s ? parseInt(s, 10) : 0,
+  );
 }
 
 const MEDIA_PATTERNS: { re: RegExp; type: Message["mediaType"] }[] = [
-  { re: /<Mídia oculta>|<arquivo de mídia oculto>|<Media omitted>|image omitted|imagem ocultada|\bIMG[-_\w\d]*\.(?:jpe?g|png|webp|gif)|\.(?:jpe?g|png|webp|gif)\b/i, type: "image" },
-  { re: /vídeo ocultado|video omitted|\bVID[-_\w\d]*\.(?:mp4|mov|3gp|webm)|\.(?:mp4|mov|3gp|webm)\b/i, type: "video" },
-  { re: /áudio ocultado|audio omitted|ptt-|\bPTT[-_\w\d]*\.(?:opus|ogg|mp3|m4a|wav)|\.(?:opus|ogg|mp3|m4a|wav|aac|flac)\b/i, type: "audio" },
+  {
+    re: /<Mídia oculta>|<arquivo de mídia oculto>|<Media omitted>|image omitted|imagem ocultada|\bIMG[-_\w\d]*\.(?:jpe?g|png|webp|gif)|\.(?:jpe?g|png|webp|gif)\b/i,
+    type: "image",
+  },
+  {
+    re: /vídeo ocultado|video omitted|\bVID[-_\w\d]*\.(?:mp4|mov|3gp|webm)|\.(?:mp4|mov|3gp|webm)\b/i,
+    type: "video",
+  },
+  {
+    re: /áudio ocultado|audio omitted|ptt-|\bPTT[-_\w\d]*\.(?:opus|ogg|mp3|m4a|wav)|\.(?:opus|ogg|mp3|m4a|wav|aac|flac)\b/i,
+    type: "audio",
+  },
   { re: /sticker omitted|figurinha omitida/i, type: "sticker" },
   { re: /GIF omitted|GIF omitida/i, type: "gif" },
-  { re: /documento omitido|document omitted|\.(?:pdf|docx?|xlsx?|pptx?|csv|txt)\b/i, type: "document" },
+  {
+    re: /documento omitido|document omitted|\.(?:pdf|docx?|xlsx?|pptx?|csv|txt)\b/i,
+    type: "document",
+  },
 ];
 
 function detectMedia(content: string): { hasMedia: boolean; type?: Message["mediaType"] } {
@@ -228,7 +259,8 @@ const RESOLUTION_KEYWORDS = [
   /\bencaminhad\w*\b/i,
 ];
 
-const GREETING_RE = /^(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|td bem|obrigad[ao]|valeu|ok|okay|certo|perfeito|show|beleza|por nada|de nada|👍|🙏|👏|✅|\s)+[!.?\s]*$/i;
+const GREETING_RE =
+  /^(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|td bem|obrigad[ao]|valeu|ok|okay|certo|perfeito|show|beleza|por nada|de nada|👍|🙏|👏|✅|\s)+[!.?\s]*$/i;
 
 export function isGreetingOrNoise(content: string): boolean {
   const cleaned = content.replace(/[\u200e\u200f]/g, "").trim();
@@ -255,7 +287,10 @@ function topWords(messages: Message[], n = 15) {
   const counts = new Map<string, number>();
   for (const m of messages) {
     if (m.isSystem || m.hasMedia) continue;
-    const words = m.content.toLowerCase().replace(/[^\p{L}\s]/gu, " ").split(/\s+/);
+    const words = m.content
+      .toLowerCase()
+      .replace(/[^\p{L}\s]/gu, " ")
+      .split(/\s+/);
     for (const w of words) {
       if (w.length < 4 || STOP_WORDS.has(w)) continue;
       counts.set(w, (counts.get(w) ?? 0) + 1);
@@ -304,7 +339,9 @@ export function analyze(messages: Message[]): Analysis {
     const demand: Demand = {
       date: m.date,
       requester: m.author,
-      message: m.hasMedia ? `[${mediaTypeLabel(m.mediaType)} enviado pela clínica] ${m.content}`.slice(0, 280) : m.content.slice(0, 280),
+      message: m.hasMedia
+        ? `[${mediaTypeLabel(m.mediaType)} enviado pela clínica] ${m.content}`.slice(0, 280)
+        : m.content.slice(0, 280),
       status: "pendente",
     };
     const cutoff = m.date.getTime() + 1000 * 60 * 60 * 72;
@@ -350,7 +387,10 @@ export function analyze(messages: Message[]): Analysis {
     }
     d.count++;
     if (!m.hasMedia) {
-      const words = m.content.toLowerCase().replace(/[^\p{L}\s]/gu, " ").split(/\s+/);
+      const words = m.content
+        .toLowerCase()
+        .replace(/[^\p{L}\s]/gu, " ")
+        .split(/\s+/);
       for (const w of words) {
         if (w.length < 5 || STOP_WORDS.has(w)) continue;
         d.words.set(w, (d.words.get(w) ?? 0) + 1);
@@ -362,7 +402,10 @@ export function analyze(messages: Message[]): Analysis {
     .map(([date, v]) => ({
       date,
       count: v.count,
-      topics: [...v.words.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([w]) => w),
+      topics: [...v.words.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([w]) => w),
     }));
 
   // Percentages
@@ -377,7 +420,9 @@ export function analyze(messages: Message[]): Analysis {
     const m =
       s.content.match(/criou o grupo\s+["“"]([^"”"]+)["”"]/i) ||
       s.content.match(/created group\s+["“"]([^"”"]+)["”"]/i) ||
-      s.content.match(/(?:mudou|changed).*(?:assunto|nome|subject|name).*?(?:para|to)\s+["“"]([^"”"]+)["”"]/i);
+      s.content.match(
+        /(?:mudou|changed).*(?:assunto|nome|subject|name).*?(?:para|to)\s+["“"]([^"”"]+)["”"]/i,
+      );
     if (m) {
       groupName = m[1].trim();
     }
@@ -417,22 +462,30 @@ export function analyze(messages: Message[]): Analysis {
   const reasons: string[] = [];
   let recommendation: ClosureVerdict["recommendation"] = "avaliar_manual";
   if (pendentes.length > 0) {
-    reasons.push(`Existem ${pendentes.length} demanda(s) pendente(s) sem resolução clara — manter aberto.`);
+    reasons.push(
+      `Existem ${pendentes.length} demanda(s) pendente(s) sem resolução clara — manter aberto.`,
+    );
     recommendation = "manter_aberto";
   } else if (inWindow.length === 0 && daysSinceLast >= 14) {
     reasons.push(`Sem nenhuma mensagem nas últimas 2 semanas (última há ${daysSinceLast} dias).`);
     reasons.push("Nenhuma demanda pendente registrada.");
     recommendation = "pode_encerrar";
   } else if (inWindow.length < 5 && openInWindow === 0 && daysSinceLast >= 7) {
-    reasons.push(`Baixíssima atividade (${inWindow.length} mensagens em 14 dias) e nenhuma pendência.`);
+    reasons.push(
+      `Baixíssima atividade (${inWindow.length} mensagens em 14 dias) e nenhuma pendência.`,
+    );
     reasons.push(`Última mensagem há ${daysSinceLast} dias.`);
     recommendation = "pode_encerrar";
   } else if (openInWindow > 0) {
     reasons.push(`${openInWindow} demanda(s) aberta(s) na janela das últimas 2 semanas.`);
     recommendation = "manter_aberto";
   } else {
-    reasons.push(`${inWindow.length} mensagens nas últimas 2 semanas com ${activeAuthors.size} participante(s) ativo(s).`);
-    reasons.push(`${resolvedInWindow} demanda(s) resolvida(s) no período, ${openInWindow} pendente(s).`);
+    reasons.push(
+      `${inWindow.length} mensagens nas últimas 2 semanas com ${activeAuthors.size} participante(s) ativo(s).`,
+    );
+    reasons.push(
+      `${resolvedInWindow} demanda(s) resolvida(s) no período, ${openInWindow} pendente(s).`,
+    );
     recommendation = inWindow.length < 20 && openInWindow === 0 ? "pode_encerrar" : "manter_aberto";
   }
 
