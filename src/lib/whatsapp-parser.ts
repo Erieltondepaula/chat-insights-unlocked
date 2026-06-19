@@ -14,6 +14,7 @@ export type Demand = {
   message: string;
   resolvedBy?: string;
   resolvedAt?: Date;
+  resolutionMessage?: string;
   status: "pendente" | "resolvido";
 };
 
