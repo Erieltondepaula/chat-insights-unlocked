@@ -263,20 +263,43 @@ const RESOLUTION_KEYWORDS = [
 const GREETING_RE =
   /^(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|td bem|obrigad[ao]|valeu|ok|okay|certo|perfeito|show|beleza|por nada|de nada|👍|🙏|👏|✅|\s)+[!.?\s]*$/i;
 
+// Tópicos que NÃO interessam ao relatório (agendamento de reunião, horários
+// disponíveis para call, marcação de meeting interna etc.) — apenas Flow/IA/robô.
+const OFFTOPIC_RE =
+  /\b(reuni[aã]o|reunioes|reuniões|call|meeting|huddle|aliment[ae]r? agenda|hor[áa]rio (?:dispon[ií]vel|livre|para reuni[aã]o|de reuni[aã]o)|melhor hor[áa]rio|que hor[áa]s (?:vc|voc[eê]) pode|marcar (?:uma )?(?:reuni[aã]o|call|conversa)|agendar (?:uma )?(?:reuni[aã]o|call|conversa)|google meet|g\.?meet|zoom|teams|link da (?:reuni[aã]o|call)|sala do meet)\b/i;
+
+// Tópicos QUE interessam: Flow, IA, robô, bot, agente, base de conhecimento,
+// fluxos, prompts, configuração do produto, comportamento ("ele fez/não devia").
+const FLOW_TOPIC_RE =
+  /\b(flow|amigo ?flow|agente|ag\. ?flow|rob[oô]|bot|i\.?a\b|intelig[eê]ncia artificial|chatbot|ai\b|prompt|fluxo|fluxos|base de conhecimento|treinamento (?:da|do) (?:ia|flow|bot|rob[oô])|configura[cç][aã]o|configurar|par[aâ]metro|template|disparo|webhook|integra[cç][aã]o|api|meta business|whatsapp business|funil|lead|orçamento (?:errado|inflado)|alucin\w+|respondeu errado|n[aã]o devia|n[aã]o deveria|comportamento (?:do )?(?:bot|rob[oô]|flow|ia)|enviou (?:mensagem )?errad\w+|bug|erro|falha|travou|parou de responder|sumiu|n[aã]o respondeu|respondeu sozinho)\b/i;
+
 export function isGreetingOrNoise(content: string): boolean {
   const cleaned = content.replace(/[\u200e\u200f]/g, "").trim();
   return cleaned.length <= 40 && GREETING_RE.test(cleaned);
 }
 
+// Conversas sobre marcar reunião / horário disponível para call são ignoradas.
+export function isOffTopicMeeting(content: string): boolean {
+  if (!content) return false;
+  // só descarta se for clara conversa de agenda E não mencionar Flow/IA/robô
+  if (FLOW_TOPIC_RE.test(content)) return false;
+  return OFFTOPIC_RE.test(content);
+}
+
 function isDemand(content: string): boolean {
   if (isGreetingOrNoise(content)) return false;
-  return DEMAND_KEYWORDS.some((r) => r.test(content));
+  if (isOffTopicMeeting(content)) return false;
+  // Precisa ser sobre Flow/IA/robô OU ter forma clara de pedido/queixa operacional
+  const looksLikeRequest = DEMAND_KEYWORDS.some((r) => r.test(content));
+  return FLOW_TOPIC_RE.test(content) || looksLikeRequest;
 }
 
 function isResolution(content: string): boolean {
   if (isGreetingOrNoise(content)) return false;
+  if (isOffTopicMeeting(content)) return false;
   return RESOLUTION_KEYWORDS.some((r) => r.test(content));
 }
+
 
 const STOP_WORDS = new Set(
   "a o e é de da do das dos para por com sem em na no nas nos um uma uns umas que se ao aos não sim mas muito mais menos eu tu ele ela nós vós eles elas meu minha teu tua seu sua nosso vosso já só também ainda quando onde como porque pra pro tá ta tô to né tipo então essa esse isso aquele aquela aqui ali lá vai vou foi ser estar tem ter".split(
