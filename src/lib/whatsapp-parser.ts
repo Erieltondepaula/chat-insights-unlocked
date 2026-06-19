@@ -14,6 +14,7 @@ export type Demand = {
   message: string;
   resolvedBy?: string;
   resolvedAt?: Date;
+  resolutionMessage?: string;
   status: "pendente" | "resolvido";
 };
 
@@ -353,6 +354,9 @@ export function analyze(messages: Message[]): Analysis {
       if (isResolution(r.content) || r.hasMedia) {
         demand.resolvedBy = supportName;
         demand.resolvedAt = r.date;
+        demand.resolutionMessage = r.hasMedia
+          ? `[${mediaTypeLabel(r.mediaType)} enviado pelo suporte] ${r.content}`.slice(0, 400)
+          : r.content.slice(0, 400);
         demand.status = "resolvido";
         break;
       }
