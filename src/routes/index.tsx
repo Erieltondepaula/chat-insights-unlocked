@@ -169,7 +169,15 @@ function Index() {
         const t = await f.text();
         combined += (combined ? "\n" : "") + t;
       }
-      const msgs = combined ? parseWhatsApp(combined) : [];
+      const allMsgs = combined ? parseWhatsApp(combined) : [];
+      // Janela de análise: somente mensagens entre 2 e 3 semanas atrás
+      // (exclui o que é mais recente que 2 semanas e o que é mais antigo que 3 semanas).
+      const now = Date.now();
+      const windowEnd = now - 14 * 86_400_000;
+      const windowStart = now - 21 * 86_400_000;
+      const msgs = allMsgs.filter(
+        (m) => m.date.getTime() >= windowStart && m.date.getTime() <= windowEnd,
+      );
       const a = analyze(msgs);
       const fileMedia = {
         image: extras.images.length,
@@ -184,7 +192,12 @@ function Index() {
       }
       const insights = await analyzeSelectedAttachments(mediaFiles);
       setAttachmentInsights(insights);
-      if (
+      if (msgs.length === 0 && allMsgs.length > 0) {
+        setError(
+          "Nenhuma mensagem encontrada na janela de 2 a 3 semanas atrás. A conversa pode ser muito recente ou muito antiga para o recorte solicitado.",
+        );
+        setAnalysis(null);
+      } else if (
         msgs.length === 0 &&
         extras.images.length +
           extras.videos.length +
