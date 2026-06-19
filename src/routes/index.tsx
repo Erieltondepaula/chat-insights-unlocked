@@ -192,7 +192,12 @@ function Index() {
       }
       const insights = await analyzeSelectedAttachments(mediaFiles);
       setAttachmentInsights(insights);
-      if (
+      if (msgs.length === 0 && allMsgs.length > 0) {
+        setError(
+          "Nenhuma mensagem encontrada na janela de 2 a 3 semanas atrás. A conversa pode ser muito recente ou muito antiga para o recorte solicitado.",
+        );
+        setAnalysis(null);
+      } else if (
         msgs.length === 0 &&
         extras.images.length +
           extras.videos.length +
