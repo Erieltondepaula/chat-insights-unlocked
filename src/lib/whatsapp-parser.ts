@@ -124,7 +124,7 @@ export function isAmigoFlowSupport(author: string | null | undefined): boolean {
 // iOS pt-BR: [12/03/2024, 14:32:10] Author: message
 // Also handles 12/03/24 and 12.03.2024
 const LINE_REGEX =
-  /^\u200E?\[?(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\]?\s*(?:[-–]\s*)?(.*)$/;
+  /^\u200E?\[?(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\]?\s*(?:[-–]\s*)?(.*)$/;
 
 function parseDateParts(d: string, m: string, y: string, h: string, mi: string, s?: string): Date {
   let year = parseInt(y, 10);
