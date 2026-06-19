@@ -441,59 +441,107 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   const contentW = pageW - margin * 2;
   let y = margin;
 
-  // ----- Header
-  doc.setTextColor(...TEXT);
+  // ----- Header: big bold navy title, left-aligned subtitle, info box
+  doc.setTextColor(...NAVY);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  y = centered(doc, sanitize(draft.title), y + 4, contentW, pageW / 2);
+  doc.setFontSize(22);
+  const titleLines = doc.splitTextToSize(sanitize(draft.title), contentW);
+  for (const line of titleLines.slice(0, 3)) {
+    doc.text(line, margin, y + 18);
+    y += 24;
+  }
+  y += 4;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.setFontSize(10.5);
   doc.setTextColor(...MUTED);
-  y = centered(doc, sanitize(draft.subtitle), y + 6, contentW, pageW / 2) + 10;
-  y = paragraph(doc, sanitize(draft.periodSummary), margin, y, contentW, 9.5, "normal") + 12;
+  doc.text(sanitize(draft.subtitle), margin, y);
+  y += 18;
 
-  // ----- Identification table
-  autoTable(doc, {
-    startY: y,
-    theme: "grid",
-    styles: { fontSize: 9, cellPadding: 6, valign: "top", lineColor: [220, 220, 220] },
-    columnStyles: {
-      0: { fontStyle: "bold", fillColor: SOFT, cellWidth: 125 },
-      2: { fontStyle: "bold", fillColor: SOFT, cellWidth: 120 },
-    },
-    body: [
-      ["Cliente Contratante", sanitize(draft.clientName), "Data de Emissão", draft.emissionDate],
-      ["Módulo Auditado", draft.moduleAudited, "Status Atual", draft.status],
-      ["Data de Início do Grupo", draft.groupCreatedAt, "", ""],
-    ],
-    margin: { left: margin, right: margin },
-  });
-  y = lastY(doc) + 20;
+  // Info box (light grey-blue bg, no borders, two columns)
+  const infoRows: [string, string, string, string][] = [
+    ["Cliente Contratante:", sanitize(draft.clientName), "Data de Emissão:", draft.emissionDate],
+    ["Módulo Auditado:", draft.moduleAudited, "Status Atual:", draft.status],
+    ["Data de Início do Grupo:", draft.groupCreatedAt, "", ""],
+  ];
+  const infoRowH = 26;
+  const infoH = infoRows.length * infoRowH + 10;
+  doc.setFillColor(...INFO_BG);
+  doc.roundedRect(margin, y, contentW, infoH, 4, 4, "F");
+  let infoY = y + 18;
+  const colW = contentW / 2;
+  for (const [l1, v1, l2, v2] of infoRows) {
+    doc.setTextColor(...NAVY);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text(l1, margin + 12, infoY);
+    const l1W = doc.getTextWidth(l1) + 4;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXT);
+    const v1Lines = doc.splitTextToSize(sanitize(v1), colW - 24 - l1W);
+    doc.text(v1Lines[0] ?? "", margin + 12 + l1W, infoY);
+    if (l2) {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...NAVY);
+      doc.text(l2, margin + colW + 6, infoY);
+      const l2W = doc.getTextWidth(l2) + 4;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...TEXT);
+      const v2Lines = doc.splitTextToSize(sanitize(v2), colW - 18 - l2W);
+      doc.text(v2Lines[0] ?? "", margin + colW + 6 + l2W, infoY);
+    }
+    infoY += infoRowH;
+  }
+  y += infoH + 6;
+
+  // thin blue rule like the reference
+  doc.setDrawColor(...BLUE);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, margin + contentW, y);
+  y += 18;
+
+  // Period summary (small, muted)
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  for (const ln of doc.splitTextToSize(sanitize(draft.periodSummary), contentW)) {
+    doc.text(ln, margin, y);
+    y += 12;
+  }
+  y += 8;
 
   // ----- Envolvidos
   if (draft.envolvidos.length) {
-    y = sectionTitle(
-      doc,
-      "1. Contratantes, Colaboradores e Equipe de Suporte Cadastrados",
-      margin,
-      y,
-      contentW,
-    );
+    y = sectionTitle(doc, "1. Contratantes, Colaboradores e Equipe de Suporte", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Nome do Envolvido", "Organização", "Papel / Atribuição no Processo"]],
       body: draft.envolvidos.map((p) => [sanitize(p.name), p.org, sanitize(p.role)]),
-      headStyles: { fillColor: BRAND, textColor: 255, fontSize: 8.8, halign: "left" },
-      styles: { fontSize: 8.8, cellPadding: 5, valign: "top" },
-      columnStyles: {
-        0: { cellWidth: 145, fontStyle: "bold" },
-        1: { cellWidth: 105 },
-        2: { cellWidth: contentW - 250 },
+      headStyles: {
+        fillColor: NAVY_DEEP,
+        textColor: 255,
+        fontSize: 9.5,
+        fontStyle: "bold",
+        halign: "left",
+        cellPadding: 7,
       },
+      styles: {
+        fontSize: 9.2,
+        cellPadding: 7,
+        valign: "top",
+        lineColor: RULE,
+        textColor: TEXT,
+      },
+      columnStyles: {
+        0: { cellWidth: 150, fontStyle: "bold" },
+        1: { cellWidth: 110, fillColor: INFO_BG, textColor: BLUE, fontStyle: "bold" },
+        2: { cellWidth: contentW - 260 },
+      },
+      alternateRowStyles: { fillColor: [255, 255, 255] },
       margin: { left: margin, right: margin },
     });
-    y = lastY(doc) + 18;
+    y = lastY(doc) + 22;
   }
+
 
   // ----- Demands
   y = sectionTitle(doc, "2. Demandas do Cliente e Retorno/Ações Realizadas", margin, y, contentW);
