@@ -390,27 +390,39 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): De
     ? `${pending} item(ns) sem resolução explícita até o fechamento da auditoria.`
     : "Todas as solicitações do dia possuem devolutiva vinculada.";
 
+  // Regex local para descartar devolutivas/respostas que falem apenas de link
+  const LINK_TXT = /\blink\b|https?:\/\/|\bwww\./i;
+
   // List EVERY devolutiva with its actual text (deduped by first 80 chars)
   const seenResp = new Set<string>();
   const responseLines: string[] = [];
   for (const r of resolved) {
     const who = r.resolvedBy ?? "Equipe Amigo Flow";
     const txt = r.cleanResolution;
+    if (txt && LINK_TXT.test(txt)) continue; // ignora devolutivas sobre link
     if (txt) {
       const sig = `${who}|${txt.slice(0, 80).toLowerCase()}`;
       if (seenResp.has(sig)) continue;
       seenResp.add(sig);
-      responseLines.push(`• ${who}: ${txt.slice(0, 320)}`);
+      let line = `• ${who}: ${txt.slice(0, 320)}`;
+      if (r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp)) {
+        line += `\n   ↳ Resposta do cliente (${fmtDateOnly(r.clientFollowUpAt)}): ${r.clientFollowUp.slice(0, 280)}`;
+      }
+      responseLines.push(line);
     } else {
-      responseLines.push(`• ${who}: (devolutiva registrada via anexo)`);
+      let line = `• ${who}: (devolutiva registrada via anexo)`;
+      if (r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp)) {
+        line += `\n   ↳ Resposta do cliente (${fmtDateOnly(r.clientFollowUpAt)}): ${r.clientFollowUp.slice(0, 280)}`;
+      }
+      responseLines.push(line);
     }
   }
   const supportActions = responseLines.length
     ? responseLines.join("\n")
     : "• Sem devolutiva da equipe Amigo Flow vinculada a este dia.";
 
-  const supportResults = resolved.length
-    ? `Resultado: ${resolved.length} devolutiva(s) registrada(s) pela equipe Amigo Flow.`
+  const supportResults = responseLines.length
+    ? `Resultado: ${responseLines.length} devolutiva(s) registrada(s) pela equipe Amigo Flow.`
     : "Resultado: pendente de retorno, validação ou posicionamento interno.";
 
   // Title: first non-empty bullet
