@@ -162,6 +162,31 @@ function Index() {
     doc.save(`${fname}.pdf`);
   }
 
+  async function analyzeSelectedAttachments(files: MediaAttachmentFile[]): Promise<AttachmentInsight[]> {
+    const selected = files
+      .filter(({ file }) => file.size <= 8 * 1024 * 1024)
+      .slice(0, 8);
+    if (!selected.length) return [];
+    try {
+      return await analyzeAttachments({
+        data: {
+          files: await Promise.all(selected.map(async ({ file, kind }) => ({
+            name: file.name,
+            mime: file.type || fallbackMime(file.name, kind),
+            kind,
+            data: await fileToBase64(file),
+          }))),
+        },
+      });
+    } catch {
+      return selected.map(({ file, kind }) => ({
+        name: file.name,
+        type: kind,
+        summary: "Anexo identificado e considerado como contexto da conversa; interpretação automática indisponível para este arquivo.",
+      }));
+    }
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
@@ -354,24 +379,44 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
         </div>
       </Card>
 
-      <Card title="2. Fator Conclusivo / Parecer Crítico">
-        <Field label="Motivo crítico (texto da caixa de alerta)">
-          <textarea className={textareaCls} rows={5} value={draft.criticalMotive}
-            onChange={(e) => set("criticalMotive", e.target.value)} />
-        </Field>
-        <div className="mt-3 grid gap-4 sm:grid-cols-3">
-          <Field label="Citação (opcional)">
-            <textarea className={textareaCls} rows={3} value={draft.criticalQuote}
-              onChange={(e) => set("criticalQuote", e.target.value)} />
+      <Card title="2. Situação Atual, Pendências e Resumo Executivo">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Breve resumo do período analisado">
+            <textarea className={textareaCls} rows={4} value={draft.periodSummary}
+              onChange={(e) => set("periodSummary", e.target.value)} />
           </Field>
-          <Field label="Autor da citação">
-            <input className={inputCls} value={draft.criticalQuoteAuthor}
-              onChange={(e) => set("criticalQuoteAuthor", e.target.value)} />
+          <Field label="Situação Atual">
+            <textarea className={textareaCls} rows={4} value={draft.currentSituation}
+              onChange={(e) => set("currentSituation", e.target.value)} />
+          </Field>
+          <Field label="Pendências">
+            <textarea className={textareaCls} rows={4} value={draft.pendingItems}
+              onChange={(e) => set("pendingItems", e.target.value)} />
+          </Field>
+          <Field label="Resumo Executivo">
+            <textarea className={textareaCls} rows={4} value={draft.executiveSummary}
+              onChange={(e) => set("executiveSummary", e.target.value)} />
+          </Field>
+          <Field label="Principais Temas Identificados">
+            <textarea className={textareaCls} rows={4} value={draft.mainThemes}
+              onChange={(e) => set("mainThemes", e.target.value)} />
+          </Field>
+          <Field label="Ações Executadas">
+            <textarea className={textareaCls} rows={4} value={draft.actionsExecuted}
+              onChange={(e) => set("actionsExecuted", e.target.value)} />
+          </Field>
+          <Field label="Pendências Atuais">
+            <textarea className={textareaCls} rows={4} value={draft.currentPendencies}
+              onChange={(e) => set("currentPendencies", e.target.value)} />
+          </Field>
+          <Field label="Imagens, áudios e documentos considerados">
+            <textarea className={textareaCls} rows={4} value={draft.attachmentNotes}
+              onChange={(e) => set("attachmentNotes", e.target.value)} />
           </Field>
         </div>
       </Card>
 
-      <Card title="3. Demandas e Resoluções">
+      <Card title="3. Demandas do Cliente e Retorno/Ações Realizadas">
         <div className="space-y-4">
           {draft.demands.map((d, i) => (
             <div key={i} className="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3">
@@ -383,18 +428,26 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
                 <button className="col-span-1 rounded border border-red-200 text-sm text-red-700 hover:bg-red-50"
                   onClick={() => set("demands", draft.demands.filter((_, j) => j !== i))}>✕</button>
               </div>
-              <Field label="Ocorrência">
-                <textarea className={textareaCls} rows={2} value={d.ocorrencia}
-                  onChange={(e) => { const n = [...draft.demands]; n[i] = { ...n[i], ocorrencia: e.target.value }; set("demands", n); }} />
+              <Field label="Demandas do Cliente — problema/solicitação">
+                <textarea className={textareaCls} rows={2} value={d.clientDemand}
+                  onChange={(e) => { const n = [...draft.demands]; n[i] = { ...n[i], clientDemand: e.target.value }; set("demands", n); }} />
               </Field>
-              <Field label="Resolução">
-                <textarea className={textareaCls} rows={2} value={d.resolucao}
-                  onChange={(e) => { const n = [...draft.demands]; n[i] = { ...n[i], resolucao: e.target.value }; set("demands", n); }} />
+              <Field label="Relatos, observações e trechos relevantes">
+                <textarea className={textareaCls} rows={2} value={`${d.clientReports}\n${d.relevantQuotes}`.trim()}
+                  onChange={(e) => { const [clientReports, ...rest] = e.target.value.split("\n"); const n = [...draft.demands]; n[i] = { ...n[i], clientReports, relevantQuotes: rest.join("\n") }; set("demands", n); }} />
+              </Field>
+              <Field label="Retorno/Ações Realizadas">
+                <textarea className={textareaCls} rows={2} value={d.supportActions}
+                  onChange={(e) => { const n = [...draft.demands]; n[i] = { ...n[i], supportActions: e.target.value }; set("demands", n); }} />
+              </Field>
+              <Field label="Resultados dos testes ou validações">
+                <textarea className={textareaCls} rows={2} value={d.supportResults}
+                  onChange={(e) => { const n = [...draft.demands]; n[i] = { ...n[i], supportResults: e.target.value }; set("demands", n); }} />
               </Field>
             </div>
           ))}
           <button className="text-sm font-medium text-emerald-700 hover:underline"
-            onClick={() => set("demands", [...draft.demands, { dateLabel: "", titleLabel: "", ocorrencia: "", resolucao: "" }])}>
+            onClick={() => set("demands", [...draft.demands, { dateLabel: "", titleLabel: "", clientDemand: "", clientReports: "", relevantQuotes: "", supportActions: "", supportResults: "" }])}>
             + Adicionar demanda
           </button>
         </div>
