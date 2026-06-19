@@ -50,14 +50,27 @@ Não invente dados. Se não houver texto audível/legível, descreva a limitaç�
       }),
     });
 
-    if (!response.ok) return [] satisfies AttachmentInsight[];
+    if (!response.ok) return fallbackInsights(data.files);
     const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const raw = json.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, "")) as {
-      items?: AttachmentInsight[];
-    };
-    return (parsed.items ?? []).slice(0, 8);
+    try {
+      const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, "")) as {
+        items?: AttachmentInsight[];
+      };
+      return (parsed.items ?? []).slice(0, 8);
+    } catch {
+      return fallbackInsights(data.files);
+    }
   });
+
+function fallbackInsights(files: Array<z.infer<typeof fileSchema>>): AttachmentInsight[] {
+  return files.map((file) => ({
+    name: file.name,
+    type: file.kind,
+    summary:
+      "Anexo identificado e considerado como contexto da conversa; interpretação automática indisponível para este arquivo.",
+  }));
+}
 
 function audioFormat(name: string, mime: string): string {
   const ext = name.toLowerCase().split(".").pop() || "";
