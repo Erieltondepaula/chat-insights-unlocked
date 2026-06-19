@@ -264,14 +264,21 @@ const GREETING_RE =
   /^(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|td bem|obrigad[ao]|valeu|ok|okay|certo|perfeito|show|beleza|por nada|de nada|👍|🙏|👏|✅|\s)+[!.?\s]*$/i;
 
 // Tópicos que NÃO interessam ao relatório (agendamento de reunião, horários
-// disponíveis para call, marcação de meeting interna etc.) — apenas Flow/IA/robô.
+// disponíveis para call, marcação de meeting interna, envio/solicitação de
+// link genérico etc.) — apenas Flow/IA/robô.
 const OFFTOPIC_RE =
   /\b(reuni[aã]o|reunioes|reuniões|call|meeting|huddle|aliment[ae]r? agenda|hor[áa]rio (?:dispon[ií]vel|livre|para reuni[aã]o|de reuni[aã]o)|melhor hor[áa]rio|que hor[áa]s (?:vc|voc[eê]) pode|marcar (?:uma )?(?:reuni[aã]o|call|conversa)|agendar (?:uma )?(?:reuni[aã]o|call|conversa)|google meet|g\.?meet|zoom|teams|link da (?:reuni[aã]o|call)|sala do meet)\b/i;
 
-// Tópicos QUE interessam: Flow, IA, robô, bot, agente, base de conhecimento,
-// fluxos, prompts, configuração do produto, comportamento ("ele fez/não devia").
+// Mensagens sobre LINK (envio, solicitação, compartilhamento) devem ser
+// ignoradas — não fazem sentido no relatório de auditoria do Flow.
+const LINK_RE =
+  /\b(link|links|url|https?:\/\/|www\.)\b|\bmanda(?:r)? (?:o )?link\b|\benvia(?:r)? (?:o )?link\b|\bsegue (?:o )?link\b|\bpassa (?:o )?link\b/i;
+
+// Tópicos QUE interessam: comportamento operacional do Flow / Agente / Bot.
+// Foco em relatos do tipo "ele fez/não fez X", agendamento, confirmação,
+// valor, transferência, repetição, finalização, registro na agenda.
 const FLOW_TOPIC_RE =
-  /\b(flow|amigo ?flow|agente|ag\. ?flow|rob[oô]|bot|i\.?a\b|intelig[eê]ncia artificial|chatbot|ai\b|prompt|fluxo|fluxos|base de conhecimento|treinamento (?:da|do) (?:ia|flow|bot|rob[oô])|configura[cç][aã]o|configurar|par[aâ]metro|template|disparo|webhook|integra[cç][aã]o|api|meta business|whatsapp business|funil|lead|orçamento (?:errado|inflado)|alucin\w+|respondeu errado|n[aã]o devia|n[aã]o deveria|comportamento (?:do )?(?:bot|rob[oô]|flow|ia)|enviou (?:mensagem )?errad\w+|bug|erro|falha|travou|parou de responder|sumiu|n[aã]o respondeu|respondeu sozinho)\b/i;
+  /\b(flow|amigo ?flow|agente|ag\. ?flow|rob[oô]|bot|i\.?a\b|intelig[eê]ncia artificial|chatbot|prompt|fluxo|fluxos|base de conhecimento|treinamento (?:da|do) (?:ia|flow|bot|rob[oô])|configura[cç][aã]o|configurar|par[aâ]metro|template|disparo|webhook|integra[cç][aã]o|meta business|whatsapp business|funil|alucin\w+|respondeu errado|n[aã]o devia|n[aã]o deveria|comportamento (?:do )?(?:bot|rob[oô]|flow|ia)|enviou (?:mensagem )?errad\w+|bug|travou|parou de responder|sumiu|n[aã]o respondeu|respondeu sozinho|n[aã]o (?:est[aá] )?(?:confirmando|agendando|finalizou|finalizando|informando|registrando|registrou)|valor errado|pre[cç]o errado|or[cç]amento (?:errado|inflado)|transferindo demais|muitas transfer[eê]ncias|transferiu (?:demais|sem motivo)|muito repetitiv|repetindo|repetitivo|n[aã]o finalizou|n[aã]o foi registrado na agenda|n[aã]o agendou|disse que agendou|falou que agendou|achou que (?:tinha )?agendou|achou que (?:tinha )?agendado|profissional errad|profissional x|profissional y)\b/i;
 
 export function isGreetingOrNoise(content: string): boolean {
   const cleaned = content.replace(/[\u200e\u200f]/g, "").trim();
@@ -281,17 +288,19 @@ export function isGreetingOrNoise(content: string): boolean {
 // Conversas sobre marcar reunião / horário disponível para call são ignoradas.
 export function isOffTopicMeeting(content: string): boolean {
   if (!content) return false;
-  // só descarta se for clara conversa de agenda E não mencionar Flow/IA/robô
   if (FLOW_TOPIC_RE.test(content)) return false;
-  return OFFTOPIC_RE.test(content);
+  if (OFFTOPIC_RE.test(content)) return true;
+  // Mensagens cujo tema central é link (sem citar Flow/IA) também saem.
+  if (LINK_RE.test(content)) return true;
+  return false;
 }
 
 function isDemand(content: string): boolean {
   if (isGreetingOrNoise(content)) return false;
   if (isOffTopicMeeting(content)) return false;
-  // Precisa ser sobre Flow/IA/robô OU ter forma clara de pedido/queixa operacional
-  const looksLikeRequest = DEMAND_KEYWORDS.some((r) => r.test(content));
-  return FLOW_TOPIC_RE.test(content) || looksLikeRequest;
+  // Agora exige menção a Flow/comportamento operacional — pedidos genéricos
+  // ("pode me mandar X?") sem ligação com o módulo são descartados.
+  return FLOW_TOPIC_RE.test(content);
 }
 
 function isResolution(content: string): boolean {
