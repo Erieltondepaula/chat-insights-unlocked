@@ -320,18 +320,15 @@ export function buildDraft(
 // ============================================================
 
 function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
-  // Group by date
+  // Group by date (chronological)
   const grouped = new Map<string, Demand[]>();
   for (const d of a.demands) {
     const key = d.date.toISOString().slice(0, 10);
     grouped.set(key, [...(grouped.get(key) ?? []), d]);
   }
 
-  // Take the 8 most recent active days
   return [...grouped.entries()]
-    .sort(([aKey], [bKey]) => bKey.localeCompare(aKey))
-    .slice(0, 8)
-    .reverse()
+    .sort(([aKey], [bKey]) => aKey.localeCompare(bKey))
     .map(([key, items]) => buildOneBlock(key, items, insightMap));
 }
 
@@ -341,60 +338,75 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): De
   // Clean each demand: strip media tokens, collect attachment context
   const cleanedItems = items.map((d) => {
     const r = stripMediaTokens(d.message);
-    return { ...d, cleanText: r.text, filenames: r.filenames, kinds: r.kinds };
+    const rr = d.resolutionMessage
+      ? stripMediaTokens(d.resolutionMessage)
+      : { text: "", filenames: [] as string[], kinds: [] as string[] };
+    return {
+      ...d,
+      cleanText: r.text,
+      filenames: r.filenames,
+      kinds: r.kinds,
+      cleanResolution: rr.text,
+      resolutionFilenames: rr.filenames,
+    };
   });
 
-  // Dedupe textual bullets by first 60 chars (case-insensitive)
-  const seen = new Set<string>();
-  const bullets: string[] = [];
+  // Dedupe demand bullets by first 80 chars
+  const seenDemand = new Set<string>();
+  const demandBullets: string[] = [];
   for (const ci of cleanedItems) {
     const t = ci.cleanText;
     if (!t || t.length < 4) continue;
-    const sig = t.slice(0, 60).toLowerCase();
-    if (seen.has(sig)) continue;
-    seen.add(sig);
-    bullets.push(`• ${t.slice(0, 180)}`);
-    if (bullets.length >= 6) break;
+    const sig = t.slice(0, 80).toLowerCase();
+    if (seenDemand.has(sig)) continue;
+    seenDemand.add(sig);
+    demandBullets.push(`• ${t.slice(0, 260)}`);
   }
 
-  // Attachment context (one line)
-  const allFilenames = cleanedItems.flatMap((c) => c.filenames);
+  // Attachment context (only if AI insights exist for these files)
+  const allFilenames = cleanedItems.flatMap((c) => [...c.filenames, ...c.resolutionFilenames]);
   const allKinds = cleanedItems.flatMap((c) => c.kinds);
   const attachLine = buildAttachmentContext(allFilenames, allKinds, insightMap);
 
-  // Compose client demands area
   const demandLines: string[] = [];
-  if (bullets.length) demandLines.push(...bullets);
-  else demandLines.push("• Solicitações registradas apenas por meio de anexos (sem texto).");
+  if (demandBullets.length) demandLines.push(...demandBullets);
+  else demandLines.push("• Solicitações registradas apenas por anexo, sem texto correspondente.");
   if (attachLine) demandLines.push(`• ${attachLine}`);
 
   // Counts
   const pending = items.filter((d) => d.status === "pendente").length;
-  const resolved = items.filter((d) => d.status === "resolvido");
+  const resolved = cleanedItems.filter((d) => d.status === "resolvido");
   const reportLine = pending
     ? `${pending} item(ns) sem resolução explícita até o fechamento da auditoria.`
     : "Todas as solicitações do dia possuem devolutiva vinculada.";
 
-  // Aggregate devolutivas (one line per resolver with count)
-  const counts = new Map<string, number>();
+  // List EVERY devolutiva with its actual text (deduped by first 80 chars)
+  const seenResp = new Set<string>();
+  const responseLines: string[] = [];
   for (const r of resolved) {
-    if (!r.resolvedBy) continue;
-    counts.set(r.resolvedBy, (counts.get(r.resolvedBy) ?? 0) + 1);
+    const who = r.resolvedBy ?? "Equipe Amigo Flow";
+    const txt = r.cleanResolution;
+    if (txt) {
+      const sig = `${who}|${txt.slice(0, 80).toLowerCase()}`;
+      if (seenResp.has(sig)) continue;
+      seenResp.add(sig);
+      responseLines.push(`• ${who}: ${txt.slice(0, 320)}`);
+    } else {
+      responseLines.push(`• ${who}: (devolutiva registrada via anexo)`);
+    }
   }
-  const supportActions = counts.size
-    ? [...counts.entries()]
-        .map(([name, n]) => `• ${name} registrou ${n} devolutiva(s) neste dia.`)
-        .join("\n")
-    : "• Não foi identificada devolutiva da equipe Amigo Flow vinculada a este dia.";
+  const supportActions = responseLines.length
+    ? responseLines.join("\n")
+    : "• Sem devolutiva da equipe Amigo Flow vinculada a este dia.";
 
   const supportResults = resolved.length
-    ? "Resultado: atendimentos com registro de ação, orientação ou validação pela equipe Amigo Flow."
+    ? `Resultado: ${resolved.length} devolutiva(s) registrada(s) pela equipe Amigo Flow.`
     : "Resultado: pendente de retorno, validação ou posicionamento interno.";
 
   // Title: first non-empty bullet
-  const title = (bullets[0] ?? attachLine ?? "Demanda do cliente")
+  const title = (demandBullets[0] ?? attachLine ?? "Demanda do cliente")
     .replace(/^•\s*/, "")
-    .slice(0, 80);
+    .slice(0, 90);
 
   return {
     dateLabel: fmtDateOnly(date),
