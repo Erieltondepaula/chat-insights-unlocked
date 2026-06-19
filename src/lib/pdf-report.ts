@@ -163,33 +163,25 @@ function buildInsightMap(insights: AttachmentInsight[]): InsightMap {
   return map;
 }
 
-// Build one short attachment-context line for a demand
+// Build one short attachment-context line for a demand.
+// If no AI insight was uploaded for a given file, we DO NOT invent generic
+// "X imagens enviadas como contexto" — the report focuses only on the .txt
+// when the user didn't import the media folder.
 function buildAttachmentContext(
   filenames: string[],
-  kinds: string[],
+  _kinds: string[],
   insightMap: InsightMap,
 ): string {
+  if (!insightMap.size) return "";
   const items: string[] = [];
-  for (const fn of filenames.slice(0, 4)) {
+  for (const fn of filenames.slice(0, 6)) {
     const ins = insightMap.get(fn.toLowerCase());
     if (ins?.summary) {
-      items.push(`${kindLabel(ins.type)}: ${sanitize(ins.summary).slice(0, 200)}`);
+      items.push(`${kindLabel(ins.type)}: ${sanitize(ins.summary).slice(0, 220)}`);
     }
   }
-  if (items.length) return `Anexos analisados pela IA — ${items.join(" | ")}`;
-
-  // No AI summary; just describe what type of media was sent
-  const allKinds = [...filenames.map(extKind), ...kinds.map(kindLabel)];
-  const counts = new Map<string, number>();
-  for (const k of allKinds) {
-    const lk = kindLabel(k);
-    counts.set(lk, (counts.get(lk) ?? 0) + 1);
-  }
-  if (!counts.size) return "";
-  const parts = [...counts.entries()].map(
-    ([k, n]) => `${n} ${k}${n > 1 ? "s" : ""} enviada(s) como contexto`,
-  );
-  return `Anexos da clínica — ${parts.join(", ")}`;
+  if (!items.length) return "";
+  return `Anexos interpretados pela IA — ${items.join(" | ")}`;
 }
 
 // ============================================================
