@@ -5,6 +5,7 @@ import {
   getAmigoFlowSupportName,
   isGreetingOrNoise,
   type Analysis,
+  type Demand,
 } from "./whatsapp-parser";
 
 const BRAND: [number, number, number] = [20, 83, 45];
@@ -24,6 +25,7 @@ export type AttachmentInsight = {
 };
 
 export type Envolvido = { name: string; org: string; role: string };
+
 export type DemandItem = {
   dateLabel: string;
   titleLabel: string;
@@ -57,12 +59,151 @@ export type ReportDraft = {
 const SUPPORT_ORG = "Amigo Flow";
 const CLIENT_ORG = "Clínica Contratante";
 
+// ============================================================
+// TEXT SANITIZATION
+// ============================================================
+
+// Remove zero-width / bidi marks that WhatsApp injects (especially around media)
+// Remove emojis & non-BMP chars (helvetica from jsPDF doesn't render them — they appear as garbage / weird spacing)
+function sanitize(input: string): string {
+  if (!input) return "";
+  let s = input;
+  // Bidi & zero-width
+  s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
+  // Surrogate pairs (most emojis live in non-BMP range)
+  s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "");
+  // Symbol / emoji-ish chars that ARE in BMP
+  s = s.replace(/[\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u3000-\u303F]/g, "");
+  s = s.replace(/[\u{1F000}-\u{1FFFF}]/gu, "");
+  // Replace any control chars
+  s = s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
+  return s;
+}
+
+const MEDIA_EXT_RE =
+  "jpe?g|png|webp|gif|bmp|heic|heif|mp4|mov|3gp|webm|opus|ogg|mp3|m4a|wav|aac|flac|pdf|docx?|xlsx?|pptx?";
+
+// Strip WhatsApp / app-generated media markers. Returns clean text plus
+// any matched filenames (used to look up AI insights).
+function stripMediaTokens(input: string): { text: string; filenames: string[]; kinds: string[] } {
+  let s = sanitize(input);
+  const filenames: string[] = [];
+  const kinds: string[] = [];
+
+  // Bracket prefix produced by our parser: "[Imagem enviado pela clínica] ..."
+  s = s.replace(
+    /\[\s*(Imagem|Imagens|Foto|V[ií]deo|[ÁA]udio|Documento(?:\/PDF)?|PDF|Anexo)[^\]]*\]/gi,
+    (_m, k: string) => {
+      kinds.push(k.toLowerCase());
+      return "";
+    },
+  );
+
+  // WhatsApp native placeholders
+  s = s.replace(
+    /<\s*(?:M[íi]dia oculta|arquivo de m[íi]dia oculto|Media omitted|image omitted|video omitted|audio omitted|sticker omitted|document omitted)\s*>/gi,
+    "",
+  );
+  s = s.replace(/<[^>]{1,40}>/g, "");
+
+  // Bare filenames
+  s = s.replace(new RegExp(`\\b([\\w.\\-]+\\.(?:${MEDIA_EXT_RE}))\\b`, "gi"), (_m, fn: string) => {
+    filenames.push(fn);
+    return "";
+  });
+
+  // "(arquivo anexado)" / "(arquivo)"
+  s = s.replace(/\(\s*arquivo(?:\s+anexado)?\s*\)/gi, "");
+
+  return { text: s.replace(/\s+/g, " ").trim(), filenames, kinds };
+}
+
+function extKind(filename: string): "image" | "audio" | "video" | "document" {
+  const ext = filename.toLowerCase().split(".").pop() ?? "";
+  if (["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif"].includes(ext)) return "image";
+  if (["mp4", "mov", "3gp", "webm"].includes(ext)) return "video";
+  if (["opus", "ogg", "mp3", "m4a", "wav", "aac", "flac"].includes(ext)) return "audio";
+  return "document";
+}
+
+const KIND_LABEL: Record<string, string> = {
+  image: "imagem",
+  imagem: "imagem",
+  imagens: "imagem",
+  foto: "imagem",
+  audio: "áudio",
+  áudio: "áudio",
+  video: "vídeo",
+  vídeo: "vídeo",
+  document: "documento",
+  documento: "documento",
+  "documento/pdf": "documento",
+  pdf: "documento",
+  anexo: "anexo",
+};
+
+function kindLabel(k: string): string {
+  return KIND_LABEL[k.toLowerCase()] ?? "anexo";
+}
+
+// ============================================================
+// INSIGHT MAP (AI-interpreted attachments)
+// ============================================================
+
+type InsightMap = Map<string, AttachmentInsight>;
+
+function buildInsightMap(insights: AttachmentInsight[]): InsightMap {
+  const map = new Map<string, AttachmentInsight>();
+  for (const i of insights) {
+    if (!i?.name) continue;
+    const base = i.name.split(/[\\/]/).pop()?.toLowerCase();
+    if (base) map.set(base, i);
+    map.set(i.name.toLowerCase(), i);
+  }
+  return map;
+}
+
+// Build one short attachment-context line for a demand
+function buildAttachmentContext(
+  filenames: string[],
+  kinds: string[],
+  insightMap: InsightMap,
+): string {
+  const items: string[] = [];
+  for (const fn of filenames.slice(0, 4)) {
+    const ins = insightMap.get(fn.toLowerCase());
+    if (ins?.summary) {
+      items.push(`${kindLabel(ins.type)}: ${sanitize(ins.summary).slice(0, 200)}`);
+    }
+  }
+  if (items.length) return `Anexos analisados pela IA — ${items.join(" | ")}`;
+
+  // No AI summary; just describe what type of media was sent
+  const allKinds = [...filenames.map(extKind), ...kinds.map(kindLabel)];
+  const counts = new Map<string, number>();
+  for (const k of allKinds) {
+    const lk = kindLabel(k);
+    counts.set(lk, (counts.get(lk) ?? 0) + 1);
+  }
+  if (!counts.size) return "";
+  const parts = [...counts.entries()].map(
+    ([k, n]) => `${n} ${k}${n > 1 ? "s" : ""} enviada(s) como contexto`,
+  );
+  return `Anexos da clínica — ${parts.join(", ")}`;
+}
+
+// ============================================================
+// BUILD DRAFT
+// ============================================================
+
 export function buildDraft(
   a: Analysis,
   sourceName: string,
   attachmentInsights: AttachmentInsight[] = [],
 ): ReportDraft {
-  const title = (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, "");
+  const title = sanitize(
+    (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, ""),
+  );
   const cv = a.closureVerdict;
   const status =
     cv?.recommendation === "manter_aberto"
@@ -73,6 +214,7 @@ export function buildDraft(
 
   const insightMap = buildInsightMap(attachmentInsights);
 
+  // Envolvidos
   const supportSeen = new Map<string, Envolvido>();
   const clientSeen = new Map<string, Envolvido>();
   for (const p of a.participants) {
@@ -81,22 +223,23 @@ export function buildDraft(
       supportSeen.set(supportName, {
         name: supportName,
         org: SUPPORT_ORG,
-        role: `Suporte/Implantação · ${p.demandsResolved} devolutiva(s) · ${p.messageCount} msg`,
+        role: `Suporte/Implantação · ${p.demandsResolved} devolutiva(s)`,
       });
     } else if (p.messageCount > 0) {
       clientSeen.set(p.name, {
-        name: p.name,
+        name: sanitize(p.name),
         org: CLIENT_ORG,
-        role: `Solicitante · ${p.demandsRequested} demanda(s) · ${p.messageCount} msg`,
+        role: `Solicitante · ${p.demandsRequested} demanda(s)`,
       });
     }
   }
-
   const envolvidos = [...clientSeen.values()]
-    .slice(0, 10)
+    .slice(0, 8)
     .concat([...supportSeen.values()].slice(0, 8));
+
   const demands = buildDemandBlocks(a, insightMap);
 
+  // Last contact lines
   const lastClient = [...a.messages]
     .reverse()
     .find(
@@ -105,11 +248,28 @@ export function buildDraft(
   const lastSupport = [...a.messages]
     .reverse()
     .find((m) => !m.isSystem && getAmigoFlowSupportName(m.author) && !isGreetingOrNoise(m.content));
+
+  const cleanContent = (s: string) => stripMediaTokens(s).text.slice(0, 200);
+
   const pending = a.demands.filter((d) => d.status === "pendente");
   const resolved = a.demands.filter((d) => d.status === "resolvido");
   const themes = inferThemes(a);
+
+  const resolverCounts = new Map<string, number>();
+  for (const d of resolved) {
+    if (!d.resolvedBy) continue;
+    resolverCounts.set(d.resolvedBy, (resolverCounts.get(d.resolvedBy) ?? 0) + 1);
+  }
+  const actionsExecuted = [...resolverCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, n]) => `• ${name} registrou ${n} devolutiva(s) ao longo do período.`)
+    .join("\n");
+
   const attachmentNotes = attachmentInsights.length
-    ? attachmentInsights.map((i) => `• ${attachmentLabel(i)}: ${i.summary}`).join("\n")
+    ? attachmentInsights
+        .slice(0, 12)
+        .map((i) => `• ${kindLabel(i.type)}: ${sanitize(i.summary).slice(0, 220)}`)
+        .join("\n")
     : attachmentSummaryFromCounts(a);
 
   return {
@@ -125,34 +285,32 @@ export function buildDraft(
     demands,
     currentSituation: [
       lastClient
-        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${cleanMsg(lastClient.content, insightMap)}`
+        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${cleanContent(lastClient.content) || "(mensagem com anexo)"}`
         : "Sem contato recente do cliente identificado.",
       lastSupport
-        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${cleanMsg(lastSupport.content, insightMap)}`
+        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${cleanContent(lastSupport.content) || "(mensagem com anexo)"}`
         : "Sem devolutiva recente da equipe Amigo Flow identificada.",
       cv
-        ? `Parecer das últimas duas semanas: ${cv.reasons.join(" ")}`
+        ? `Parecer das últimas duas semanas: ${sanitize(cv.reasons.join(" "))}`
         : "Janela insuficiente para parecer automatizado.",
     ].join("\n"),
     pendingItems: pending.length
       ? pending
           .slice(0, 8)
-          .map((d) => `• ${fmtDateOnly(d.date)} — ${cleanMsg(d.message, insightMap)}`)
+          .map((d) => {
+            const c = cleanContent(d.message);
+            return `• ${fmtDateOnly(d.date)} — ${c || "(demanda registrada apenas com anexo)"}`;
+          })
           .join("\n")
       : "Não foram identificadas pendências críticas abertas no histórico analisado.",
-    executiveSummary: `A auditoria consolidou as solicitações da clínica e as devolutivas registradas pela equipe Amigo Flow. O foco do relatório é evidenciar demandas relevantes, ações realizadas, validações e pendências atuais sem reproduzir mensagens de saudação ou interações sem valor operacional.`,
+    executiveSummary:
+      "A auditoria consolidou as solicitações da clínica e as devolutivas registradas pela equipe Amigo Flow. O foco do relatório é evidenciar demandas relevantes, ações realizadas, validações e pendências atuais sem reproduzir mensagens de saudação ou interações sem valor operacional.",
     mainThemes: themes.length
       ? themes.map((t) => `• ${t}`).join("\n")
       : "• Não houve concentração temática suficiente para classificação automática.",
-    actionsExecuted: resolved.length
-      ? resolved
-          .slice(0, 8)
-          .map(
-            (d) =>
-              `• ${fmtDateOnly(d.resolvedAt)} — Devolutiva registrada por ${d.resolvedBy}: ${shortTitle(cleanMsg(d.message, insightMap))}`,
-          )
-          .join("\n")
-      : "• Não foram identificadas ações conclusivas registradas pela equipe Amigo Flow.",
+    actionsExecuted:
+      actionsExecuted ||
+      "• Não foram identificadas ações conclusivas registradas pela equipe Amigo Flow.",
     currentPendencies: [
       pending.length
         ? `• ${pending.length} demanda(s) aguardam retorno ou validação.`
@@ -160,87 +318,106 @@ export function buildDraft(
       cv?.recommendation === "pode_encerrar"
         ? "• Grupo com indícios de encerramento possível, sujeito à validação interna."
         : "• Recomenda-se manter acompanhamento até confirmação formal das pendências.",
-      ...attachmentInsights
-        .flatMap((i) => i.pending ?? [])
-        .slice(0, 4)
-        .map((p) => `• ${p}`),
     ].join("\n"),
     attachmentNotes,
   };
 }
 
-type InsightMap = Map<string, AttachmentInsight>;
-
-function buildInsightMap(insights: AttachmentInsight[]): InsightMap {
-  const map = new Map<string, AttachmentInsight>();
-  for (const i of insights) {
-    if (!i?.name) continue;
-    map.set(i.name.toLowerCase(), i);
-    const base = i.name.split(/[\\/]/).pop()?.toLowerCase();
-    if (base) map.set(base, i);
-  }
-  return map;
-}
-
-function attachmentLabel(i: AttachmentInsight): string {
-  if (i.type === "image") return "Imagem enviada pela clínica";
-  if (i.type === "audio") return "Áudio enviado pela clínica";
-  if (i.type === "document") return "Documento enviado pela clínica";
-  return "Anexo enviado pela clínica";
-}
-
-function genericAttachmentContext(kind: string): string {
-  const k = kind.toLowerCase();
-  if (k.startsWith("im") || k.startsWith("foto"))
-    return "imagem enviada pela clínica como contexto da demanda";
-  if (k.startsWith("víd") || k.startsWith("vid"))
-    return "vídeo enviado pela clínica como contexto da demanda";
-  if (k.startsWith("áud") || k.startsWith("aud") || k === "ptt")
-    return "áudio enviado pela clínica como contexto da demanda";
-  if (k.startsWith("doc") || k === "pdf")
-    return "documento enviado pela clínica como contexto da demanda";
-  return "anexo enviado pela clínica como contexto da demanda";
-}
+// ============================================================
+// DEMAND BLOCKS (compact, deduplicated, one per day)
+// ============================================================
 
 function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
-  const grouped = new Map<string, typeof a.demands>();
+  // Group by date
+  const grouped = new Map<string, Demand[]>();
   for (const d of a.demands) {
     const key = d.date.toISOString().slice(0, 10);
     grouped.set(key, [...(grouped.get(key) ?? []), d]);
   }
+
+  // Take the 8 most recent active days
   return [...grouped.entries()]
-    .sort(([aKey], [bKey]) => aKey.localeCompare(bKey))
-    .slice(-10)
-    .map(([key, items]) => {
-      const date = new Date(`${key}T12:00:00`);
-      const pending = items.filter((d) => d.status === "pendente");
-      const resolved = items.filter((d) => d.status === "resolvido");
-      const relevant = items
-        .slice(0, 3)
-        .map((d) => `“${cleanMsg(d.message, insightMap)}” — ${d.requester}`)
-        .join("\n");
-      return {
-        dateLabel: fmtDateOnly(date),
-        titleLabel: shortTitle(cleanMsg(items[0]?.message ?? "Demanda do cliente", insightMap)),
-        clientDemand: items.map((d) => `• ${cleanMsg(d.message, insightMap)}`).join("\n"),
-        clientReports: pending.length
-          ? `${pending.length} item(ns) sem resolução explícita até o fechamento da auditoria.`
-          : "As solicitações do dia possuem devolutiva vinculada no histórico analisado.",
-        relevantQuotes: relevant,
-        supportActions: resolved.length
-          ? resolved
-              .map(
-                (d) =>
-                  `• ${d.resolvedBy} registrou devolutiva${d.resolvedAt ? ` em ${fmtDateOnly(d.resolvedAt)}` : ""}.`,
-              )
-              .join("\n")
-          : "• Não foi identificada devolutiva da equipe Amigo Flow vinculada a este bloco.",
-        supportResults: resolved.length
-          ? "Resultado: atendimento com registro de ação, orientação ou validação pela equipe Amigo Flow."
-          : "Resultado: pendente de retorno, validação ou posicionamento interno.",
-      };
-    });
+    .sort(([aKey], [bKey]) => bKey.localeCompare(aKey))
+    .slice(0, 8)
+    .reverse()
+    .map(([key, items]) => buildOneBlock(key, items, insightMap));
 }
+
+function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): DemandItem {
+  const date = new Date(`${key}T12:00:00`);
+
+  // Clean each demand: strip media tokens, collect attachment context
+  const cleanedItems = items.map((d) => {
+    const r = stripMediaTokens(d.message);
+    return { ...d, cleanText: r.text, filenames: r.filenames, kinds: r.kinds };
+  });
+
+  // Dedupe textual bullets by first 60 chars (case-insensitive)
+  const seen = new Set<string>();
+  const bullets: string[] = [];
+  for (const ci of cleanedItems) {
+    const t = ci.cleanText;
+    if (!t || t.length < 4) continue;
+    const sig = t.slice(0, 60).toLowerCase();
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    bullets.push(`• ${t.slice(0, 180)}`);
+    if (bullets.length >= 6) break;
+  }
+
+  // Attachment context (one line)
+  const allFilenames = cleanedItems.flatMap((c) => c.filenames);
+  const allKinds = cleanedItems.flatMap((c) => c.kinds);
+  const attachLine = buildAttachmentContext(allFilenames, allKinds, insightMap);
+
+  // Compose client demands area
+  const demandLines: string[] = [];
+  if (bullets.length) demandLines.push(...bullets);
+  else demandLines.push("• Solicitações registradas apenas por meio de anexos (sem texto).");
+  if (attachLine) demandLines.push(`• ${attachLine}`);
+
+  // Counts
+  const pending = items.filter((d) => d.status === "pendente").length;
+  const resolved = items.filter((d) => d.status === "resolvido");
+  const reportLine = pending
+    ? `${pending} item(ns) sem resolução explícita até o fechamento da auditoria.`
+    : "Todas as solicitações do dia possuem devolutiva vinculada.";
+
+  // Aggregate devolutivas (one line per resolver with count)
+  const counts = new Map<string, number>();
+  for (const r of resolved) {
+    if (!r.resolvedBy) continue;
+    counts.set(r.resolvedBy, (counts.get(r.resolvedBy) ?? 0) + 1);
+  }
+  const supportActions = counts.size
+    ? [...counts.entries()]
+        .map(([name, n]) => `• ${name} registrou ${n} devolutiva(s) neste dia.`)
+        .join("\n")
+    : "• Não foi identificada devolutiva da equipe Amigo Flow vinculada a este dia.";
+
+  const supportResults = resolved.length
+    ? "Resultado: atendimentos com registro de ação, orientação ou validação pela equipe Amigo Flow."
+    : "Resultado: pendente de retorno, validação ou posicionamento interno.";
+
+  // Title: first non-empty bullet
+  const title = (bullets[0] ?? attachLine ?? "Demanda do cliente")
+    .replace(/^•\s*/, "")
+    .slice(0, 80);
+
+  return {
+    dateLabel: fmtDateOnly(date),
+    titleLabel: title.charAt(0).toUpperCase() + title.slice(1),
+    clientDemand: demandLines.join("\n"),
+    clientReports: reportLine,
+    relevantQuotes: "",
+    supportActions,
+    supportResults,
+  };
+}
+
+// ============================================================
+// PDF RENDERING
+// ============================================================
 
 export function generatePdf(draft: ReportDraft): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -250,33 +427,36 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   const contentW = pageW - margin * 2;
   let y = margin;
 
+  // ----- Header
   doc.setTextColor(...TEXT);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  y = centered(doc, draft.title, y + 4, contentW, pageW / 2);
+  doc.setFontSize(17);
+  y = centered(doc, sanitize(draft.title), y + 4, contentW, pageW / 2);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
+  doc.setFontSize(10);
   doc.setTextColor(...MUTED);
-  y = centered(doc, draft.subtitle, y + 8, contentW, pageW / 2) + 10;
-  y = paragraph(doc, draft.periodSummary, margin, y, contentW, 10, "normal") + 10;
+  y = centered(doc, sanitize(draft.subtitle), y + 6, contentW, pageW / 2) + 10;
+  y = paragraph(doc, sanitize(draft.periodSummary), margin, y, contentW, 9.5, "normal") + 12;
 
+  // ----- Identification table
   autoTable(doc, {
     startY: y,
     theme: "grid",
-    styles: { fontSize: 9.5, cellPadding: 7, valign: "top", lineColor: [220, 220, 220] },
+    styles: { fontSize: 9, cellPadding: 6, valign: "top", lineColor: [220, 220, 220] },
     columnStyles: {
       0: { fontStyle: "bold", fillColor: SOFT, cellWidth: 125 },
       2: { fontStyle: "bold", fillColor: SOFT, cellWidth: 120 },
     },
     body: [
-      ["Cliente Contratante", draft.clientName, "Data de Emissão", draft.emissionDate],
+      ["Cliente Contratante", sanitize(draft.clientName), "Data de Emissão", draft.emissionDate],
       ["Módulo Auditado", draft.moduleAudited, "Status Atual", draft.status],
       ["Data de Início do Grupo", draft.groupCreatedAt, "", ""],
     ],
     margin: { left: margin, right: margin },
   });
-  y = lastY(doc) + 22;
+  y = lastY(doc) + 20;
 
+  // ----- Envolvidos
   if (draft.envolvidos.length) {
     y = sectionTitle(
       doc,
@@ -288,7 +468,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     autoTable(doc, {
       startY: y,
       head: [["Nome do Envolvido", "Organização", "Papel / Atribuição no Processo"]],
-      body: draft.envolvidos.map((p) => [p.name, p.org, p.role]),
+      body: draft.envolvidos.map((p) => [sanitize(p.name), p.org, sanitize(p.role)]),
       headStyles: { fillColor: BRAND, textColor: 255, fontSize: 8.8, halign: "left" },
       styles: { fontSize: 8.8, cellPadding: 5, valign: "top" },
       columnStyles: {
@@ -298,73 +478,87 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       },
       margin: { left: margin, right: margin },
     });
-    y = lastY(doc) + 22;
+    y = lastY(doc) + 18;
   }
 
+  // ----- Demands
   y = sectionTitle(doc, "2. Demandas do Cliente e Retorno/Ações Realizadas", margin, y, contentW);
   for (const d of draft.demands) {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
+  // ----- Sections 3-5
   y = sectionTitle(doc, "3. Situação Atual", margin, y, contentW);
-  y = paragraph(doc, draft.currentSituation, margin, y, contentW, 9.5) + 12;
+  y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 10;
 
   y = sectionTitle(doc, "4. Pendências", margin, y, contentW);
-  y = paragraph(doc, draft.pendingItems, margin, y, contentW, 9.5) + 12;
+  y = paragraph(doc, sanitize(draft.pendingItems), margin, y, contentW, 9.3) + 10;
 
   y = sectionTitle(doc, "5. Resumo Executivo", margin, y, contentW);
-  y = titledParagraph(doc, "Síntese", draft.executiveSummary, margin, y, contentW);
-  y = titledParagraph(doc, "Principais Temas Identificados", draft.mainThemes, margin, y, contentW);
-  y = titledParagraph(doc, "Ações Executadas", draft.actionsExecuted, margin, y, contentW);
-  y = titledParagraph(doc, "Pendências Atuais", draft.currentPendencies, margin, y, contentW);
+  y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
+  y = titledParagraph(
+    doc,
+    "Principais Temas Identificados",
+    sanitize(draft.mainThemes),
+    margin,
+    y,
+    contentW,
+  );
+  y = titledParagraph(
+    doc,
+    "Ações Executadas",
+    sanitize(draft.actionsExecuted),
+    margin,
+    y,
+    contentW,
+  );
+  y = titledParagraph(
+    doc,
+    "Pendências Atuais",
+    sanitize(draft.currentPendencies),
+    margin,
+    y,
+    contentW,
+  );
   if (draft.attachmentNotes.trim())
-    y = titledParagraph(
+    titledParagraph(
       doc,
       "Imagens, Áudios e Documentos Considerados",
-      draft.attachmentNotes,
+      sanitize(draft.attachmentNotes),
       margin,
       y,
       contentW,
     );
 
+  // ----- Footer with page numbers
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(120);
     doc.setFont("helvetica", "normal");
-    doc.text(`Auditoria Flow - Amigo - v1`, margin, pageH - 20);
+    doc.text("Auditoria Flow - Amigo - v1", margin, pageH - 20);
     doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 20, { align: "right" });
   }
   return doc;
 }
 
 function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
-  y = ensureSpace(doc, y, 150, x);
+  y = ensureSpace(doc, y, 120, x);
   doc.setFillColor(...SOFT);
   doc.setDrawColor(220, 230, 222);
-  doc.roundedRect(x, y, w, 24, 3, 3, "FD");
+  doc.roundedRect(x, y, w, 22, 3, 3, "FD");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(...BRAND);
-  doc.text(`Data (${d.dateLabel})`, x + 10, y + 16);
-  y += 36;
-  y = titledParagraph(
-    doc,
-    "Demandas do Cliente",
-    [d.clientDemand, d.clientReports, d.relevantQuotes].filter(Boolean).join("\n"),
-    x,
-    y,
-    w,
-  );
-  y = titledParagraph(
-    doc,
-    "Retorno/Ações Realizadas",
-    [d.supportActions, d.supportResults].filter(Boolean).join("\n"),
-    x,
-    y,
-    w,
-  );
+  doc.text(`Data (${d.dateLabel})`, x + 10, y + 15);
+  y += 32;
+
+  const demandText = [d.clientDemand, d.clientReports].filter(Boolean).join("\n");
+  y = titledParagraph(doc, "Demandas do Cliente", sanitize(demandText), x, y, w);
+
+  const actionsText = [d.supportActions, d.supportResults].filter(Boolean).join("\n");
+  y = titledParagraph(doc, "Retorno/Ações Realizadas", sanitize(actionsText), x, y, w);
   return y + 6;
 }
 
@@ -376,12 +570,12 @@ function titledParagraph(
   y: number,
   w: number,
 ): number {
-  y = ensureSpace(doc, y, 45, x);
+  y = ensureSpace(doc, y, 38, x);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.8);
+  doc.setFontSize(9.6);
   doc.setTextColor(...TEXT);
   doc.text(title, x, y);
-  return paragraph(doc, text || "—", x, y + 13, w, 9.3) + 10;
+  return paragraph(doc, text || "—", x, y + 12, w, 9.2) + 8;
 }
 
 function paragraph(
@@ -401,7 +595,7 @@ function paragraph(
     for (const line of lines) {
       y = ensureSpace(doc, y, 14, x);
       doc.text(line, x, y);
-      y += size + 3.5;
+      y += size + 3.2;
     }
   }
   return y;
@@ -417,15 +611,15 @@ function centered(doc: jsPDF, text: string, y: number, w: number, centerX: numbe
 }
 
 function sectionTitle(doc: jsPDF, t: string, x: number, y: number, w: number): number {
-  y = ensureSpace(doc, y, 40, x);
+  y = ensureSpace(doc, y, 36, x);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11.5);
+  doc.setFontSize(11);
   doc.setTextColor(...BRAND);
   doc.text(t, x, y);
   doc.setDrawColor(...BRAND);
-  doc.setLineWidth(0.7);
+  doc.setLineWidth(0.6);
   doc.line(x, y + 4, x + w, y + 4);
-  return y + 20;
+  return y + 18;
 }
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
@@ -440,47 +634,6 @@ function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): num
 function lastY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 }
-
-function cleanMsg(s: string, insightMap?: InsightMap): string {
-  let out = s.replace(/<[^>]+>/g, "[anexo]");
-  const mediaExt =
-    "jpe?g|png|webp|gif|bmp|heic|heif|mp4|mov|3gp|webm|opus|ogg|mp3|m4a|wav|aac|flac|pdf|docx?|xlsx?|pptx?";
-  // "[Imagem enviado pela clínica] IMG-20260521-WA0134.jpg (arquivo anexado)"
-  out = out.replace(
-    new RegExp(
-      `\\[\\s*(Imagem|Imagens|Foto|V[ií]deo|[ÁA]udio|Documento|PDF|Anexo)[^\\]]*\\]\\s*([\\w.\\-]+\\.(?:${mediaExt}))\\s*(?:\\(arquivo anexado\\)|\\(arquivo\\))?`,
-      "gi",
-    ),
-    (_m: string, kind: string, filename: string) => describeAttachment(kind, filename, insightMap),
-  );
-  // bare filenames left over
-  out = out.replace(
-    new RegExp(`\\b([\\w.\\-]+\\.(?:${mediaExt}))\\b\\s*(?:\\(arquivo anexado\\))?`, "gi"),
-    (_m: string, filename: string) => describeAttachment(extKind(filename), filename, insightMap),
-  );
-  return out.replace(/\s+/g, " ").trim().slice(0, 420);
-}
-
-function describeAttachment(kind: string, filename: string, insightMap?: InsightMap): string {
-  const ins = insightMap?.get(filename.toLowerCase());
-  if (ins?.summary)
-    return `[Contexto interpretado por IA — ${attachmentLabel(ins)}: ${ins.summary}]`;
-  return `[${genericAttachmentContext(kind)}]`;
-}
-
-function extKind(filename: string): string {
-  const ext = filename.toLowerCase().split(".").pop() ?? "";
-  if (["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif"].includes(ext)) return "imagem";
-  if (["mp4", "mov", "3gp", "webm"].includes(ext)) return "vídeo";
-  if (["opus", "ogg", "mp3", "m4a", "wav", "aac", "flac"].includes(ext)) return "áudio";
-  return "documento";
-}
-
-function shortTitle(s: string): string {
-  const t = cleanMsg(s).slice(0, 74);
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
 
 function inferThemes(a: Analysis): string[] {
   const corpus = a.messages.map((m) => m.content.toLowerCase()).join(" ");
