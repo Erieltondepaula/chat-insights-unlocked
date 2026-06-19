@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
-import { buildDraft, generatePdf, type ReportDraft } from "@/lib/pdf-report";
+import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
+import { buildDraft, generatePdf, type AttachmentInsight, type ReportDraft } from "@/lib/pdf-report";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,6 +25,8 @@ type ExtraMedia = {
   documents: { name: string; size: number }[];
   others: { name: string; size: number }[];
 };
+
+type MediaAttachmentFile = { file: File; kind: AttachmentInsight["type"] };
 
 const EXT = {
   image: ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "tiff"],
@@ -52,6 +55,8 @@ function Index() {
     documents: [],
     others: [],
   });
+  const [mediaFiles, setMediaFiles] = useState<MediaAttachmentFile[]>([]);
+  const [attachmentInsights, setAttachmentInsights] = useState<AttachmentInsight[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [loading, setLoading] = useState(false);
@@ -75,19 +80,28 @@ function Index() {
     setInfo(null);
     setAnalysis(null);
     setDraft(null);
+    setAttachmentInsights([]);
     if (files.length === 0) return;
 
     const buckets: ExtraMedia = {
       images: [], videos: [], audios: [], documents: [], others: [],
     };
     const txts: File[] = [];
+    const mediaForAi: MediaAttachmentFile[] = [];
     for (const f of files) {
       const k = classify(f.name);
       if (k === "txt") txts.push(f);
-      else buckets[k].push({ name: f.name, size: f.size });
+      else {
+        buckets[k].push({ name: f.name, size: f.size });
+        if (k === "images") mediaForAi.push({ file: f, kind: "image" });
+        if (k === "audios") mediaForAi.push({ file: f, kind: "audio" });
+        if (k === "documents") mediaForAi.push({ file: f, kind: "document" });
+        if (k === "others") mediaForAi.push({ file: f, kind: "other" });
+      }
     }
     setExtras(buckets);
     setTxtFiles(txts);
+    setMediaFiles(mediaForAi);
     setSourceLabel(label);
 
     const totalMedia = buckets.images.length + buckets.videos.length + buckets.audios.length + buckets.documents.length;
@@ -98,7 +112,7 @@ function Index() {
     if (txts.length === 0) {
       setInfo(`Encontrei ${totalMedia} mídia(s), mas nenhum arquivo .txt da conversa. Envie o .txt para análise completa.`);
     } else {
-      setInfo(`Pronto para analisar: ${txts.length} conversa(s) .txt` + (totalMedia ? ` + ${totalMedia} mídia(s).` : "."));
+      setInfo(`Pronto para analisar: ${txts.length} conversa(s) .txt` + (totalMedia ? ` + ${totalMedia} mídia(s) com interpretação por IA.` : "."));
     }
   }
 
@@ -121,12 +135,14 @@ function Index() {
       for (const k of Object.keys(fileMedia) as (keyof typeof fileMedia)[]) {
         a.mediaCount[k] = Math.max(a.mediaCount[k], fileMedia[k]);
       }
-      if (msgs.length === 0 && extras.images.length + extras.videos.length + extras.audios.length === 0) {
+      const insights = await analyzeSelectedAttachments(mediaFiles);
+      setAttachmentInsights(insights);
+      if (msgs.length === 0 && extras.images.length + extras.videos.length + extras.audios.length + extras.documents.length === 0) {
         setError("Não foi possível identificar mensagens nem mídias.");
         setAnalysis(null);
       } else {
         setAnalysis(a);
-        setDraft(buildDraft(a, sourceLabel ?? "Relatório"));
+        setDraft(buildDraft(a, sourceLabel ?? "Relatório", insights));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao analisar.");
@@ -136,7 +152,7 @@ function Index() {
   }
 
   function resetDraft() {
-    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório"));
+    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights));
   }
 
   function downloadPdf() {
