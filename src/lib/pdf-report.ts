@@ -793,7 +793,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     contentW,
   );
   if (draft.attachmentNotes.trim())
-    titledParagraph(
+    y = titledParagraph(
       doc,
       "Imagens, Áudios e Documentos Considerados",
       sanitize(draft.attachmentNotes),
@@ -801,6 +801,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       y,
       contentW,
     );
+
+  // ----- 6. Indicadores Visuais (gráficos)
+  y = sectionTitle(doc, "6. Indicadores Visuais", margin, y);
+  y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+
 
   // ----- Footer minimalista (apenas paginação)
   const pageCount = doc.getNumberOfPages();
