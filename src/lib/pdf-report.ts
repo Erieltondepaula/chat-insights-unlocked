@@ -741,19 +741,14 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       contentW,
     );
 
-  // ----- Footer with page numbers
+  // ----- Footer minimalista (apenas paginação)
   const pageCount = doc.getNumberOfPages();
-  const footerLabel = `Auditoria Amigo Flow — ${sanitize(draft.title)}`.slice(0, 90);
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8.5);
+    doc.setFontSize(7.5);
     doc.setTextColor(...MUTED);
     doc.setFont("helvetica", "normal");
-    doc.setDrawColor(...RULE);
-    doc.setLineWidth(0.4);
-    doc.line(margin, pageH - 30, pageW - margin, pageH - 30);
-    doc.text(footerLabel, margin, pageH - 18);
-    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 18, { align: "right" });
+    doc.text(`${i}/${pageCount}`, pageW - margin, pageH - 10, { align: "right" });
   }
   return doc;
 }
