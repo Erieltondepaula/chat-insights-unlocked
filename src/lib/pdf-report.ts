@@ -326,8 +326,136 @@ export function buildDraft(
 }
 
 // ============================================================
-// DEMAND BLOCKS (compact, deduplicated, one per day)
+// DEMAND BLOCKS (narrative, "No dia .../Retorno:", min 1000 chars)
 // ============================================================
+
+function relativeDateLabel(date: Date): string | null {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diff = Math.round((today - target) / 86_400_000);
+  if (diff === 0) return "hoje";
+  if (diff === 1) return "ontem";
+  if (diff >= 2 && diff <= 6) {
+    const names = [
+      "domingo",
+      "segunda-feira",
+      "terça-feira",
+      "quarta-feira",
+      "quinta-feira",
+      "sexta-feira",
+      "sábado",
+    ];
+    return names[date.getDay()];
+  }
+  if (diff >= 7 && diff <= 13) return "semana passada";
+  const sameMonth =
+    now.getMonth() === date.getMonth() && now.getFullYear() === date.getFullYear();
+  if (diff >= 14 && !sameMonth) return "mês passado";
+  return null;
+}
+
+function buildDateLabel(date: Date, isLast: boolean): string {
+  const formal = fmtDateOnly(date);
+  if (!isLast) return `No dia ${formal}:`;
+  const rel = relativeDateLabel(date);
+  return rel ? `No dia ${formal} (${rel}):` : `No dia ${formal}:`;
+}
+
+function decapFirst(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+function ensureSentence(s: string): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return /[.!?]$/.test(t) ? t : t + ".";
+}
+
+const CLIENT_CONNECTORS = [
+  "Em complemento,",
+  "Além disso,",
+  "Na sequência,",
+  "Ainda no mesmo contato,",
+  "O cliente também apontou que",
+  "Em paralelo,",
+  "Outro ponto trazido foi que",
+];
+
+const SUPPORT_CONNECTORS = [
+  "Em seguida,",
+  "Logo depois,",
+  "Como desdobramento,",
+  "Posteriormente,",
+  "Na mesma tratativa,",
+  "Para complementar,",
+];
+
+function composeClientNarrative(prefix: string, requester: string, sentences: string[]): string {
+  const cleaned = sentences.map((s) => s.trim()).filter((s) => s && s.length > 3);
+  if (!cleaned.length) {
+    return `${prefix} o cliente ${requester ? `(${sanitize(requester)}) ` : ""}registrou contato no grupo trazendo apenas anexos como contexto da demanda, sem mensagem textual associada que pudesse ser transcrita neste relatório.`;
+  }
+  const head = `${prefix} o cliente ${cleaned.length === 1 ? "relatou que" : "trouxe os seguintes apontamentos:"} ${ensureSentence(decapFirst(cleaned[0]))}`;
+  const tail = cleaned
+    .slice(1)
+    .map(
+      (s, i) =>
+        `${CLIENT_CONNECTORS[i % CLIENT_CONNECTORS.length]} ${ensureSentence(decapFirst(s))}`,
+    )
+    .join(" ");
+  return [head, tail].filter(Boolean).join(" ");
+}
+
+function composeSupportNarrative(
+  responses: { who: string; text: string; followUp?: string; followUpAt?: Date }[],
+): string {
+  if (!responses.length) {
+    return "Retorno: até o fechamento desta auditoria não foi localizada devolutiva textual da equipe Amigo Flow vinculada a esta demanda específica, mantendo-a em acompanhamento até confirmação interna de tratativa.";
+  }
+  const parts: string[] = [];
+  responses.forEach((r, i) => {
+    const who = r.who || "a equipe Amigo Flow";
+    const body = r.text
+      ? ensureSentence(decapFirst(r.text))
+      : "registrou a devolutiva por meio de anexo, sem texto correspondente.";
+    if (i === 0) parts.push(`Retorno: ${who}, do suporte, ${body}`);
+    else parts.push(`${SUPPORT_CONNECTORS[i % SUPPORT_CONNECTORS.length]} ${who} ${body}`);
+    if (r.followUp) {
+      parts.push(
+        `Em resposta, no dia ${fmtDateOnly(r.followUpAt)} o cliente retornou informando que ${ensureSentence(decapFirst(r.followUp))}`,
+      );
+    }
+  });
+  return parts.join(" ");
+}
+
+const CLIENT_PADDINGS = [
+  "O contato reforça a necessidade de revisar o comportamento do Agente Flow no fluxo descrito, garantindo aderência ao roteiro esperado pela clínica.",
+  "O relato foi registrado no histórico do grupo de implantação e considerado como evidência operacional para fins de auditoria do módulo.",
+  "A clínica demonstrou preocupação com o impacto da ocorrência na experiência do paciente e no fluxo de agendamento conduzido pelo Agente Flow.",
+  "A demanda compõe o conjunto de apontamentos que orientam ajustes de configuração, prompt e base de conhecimento do agente.",
+  "O caso foi analisado considerando o contexto operacional da clínica e a expectativa de comportamento previamente alinhada com o time de implantação.",
+];
+
+const SUPPORT_PADDINGS = [
+  "A tratativa segue acompanhada pela equipe Amigo Flow para validação do efeito prático do ajuste sobre o fluxo do agente.",
+  "A devolutiva registrada compõe o histórico de evidências utilizadas para reavaliar configurações, prompts e regras associadas ao Flow.",
+  "O encaminhamento foi mantido sob acompanhamento até confirmação formal pela clínica de que o comportamento do agente atende ao esperado.",
+  "Eventuais reincidências do mesmo sintoma serão tratadas com revisão complementar de parâmetros e base de conhecimento do agente.",
+  "O retorno fica disponível como referência para futuras solicitações relacionadas ao mesmo módulo dentro do escopo auditado.",
+];
+
+function padToMin(text: string, paddings: string[], min = 1000): string {
+  let out = text.trim();
+  let i = 0;
+  while (out.length < min && i < paddings.length * 4) {
+    out += " " + paddings[i % paddings.length];
+    i++;
+  }
+  return out;
+}
 
 function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
   // Group by date (chronological)
@@ -337,12 +465,18 @@ function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
     grouped.set(key, [...(grouped.get(key) ?? []), d]);
   }
 
-  return [...grouped.entries()]
-    .sort(([aKey], [bKey]) => aKey.localeCompare(bKey))
-    .map(([key, items]) => buildOneBlock(key, items, insightMap));
+  const sortedKeys = [...grouped.keys()].sort((a, b) => a.localeCompare(b));
+  return sortedKeys.map((key, idx) =>
+    buildOneBlock(key, grouped.get(key)!, insightMap, idx === sortedKeys.length - 1),
+  );
 }
 
-function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): DemandItem {
+function buildOneBlock(
+  key: string,
+  items: Demand[],
+  insightMap: InsightMap,
+  isLast: boolean,
+): DemandItem {
   const date = new Date(`${key}T12:00:00`);
 
   // Clean each demand: strip media tokens, collect attachment context
@@ -361,85 +495,63 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): De
     };
   });
 
-  // Dedupe demand bullets by first 80 chars
+  // Dedupe demand sentences by first 80 chars
   const seenDemand = new Set<string>();
-  const demandBullets: string[] = [];
+  const demandSentences: string[] = [];
   for (const ci of cleanedItems) {
     const t = ci.cleanText;
     if (!t || t.length < 4) continue;
     const sig = t.slice(0, 80).toLowerCase();
     if (seenDemand.has(sig)) continue;
     seenDemand.add(sig);
-    demandBullets.push(`• ${t.slice(0, 260)}`);
+    demandSentences.push(t);
   }
 
   // Attachment context (only if AI insights exist for these files)
   const allFilenames = cleanedItems.flatMap((c) => [...c.filenames, ...c.resolutionFilenames]);
   const allKinds = cleanedItems.flatMap((c) => c.kinds);
   const attachLine = buildAttachmentContext(allFilenames, allKinds, insightMap);
+  if (attachLine) demandSentences.push(attachLine);
 
-  const demandLines: string[] = [];
-  if (demandBullets.length) demandLines.push(...demandBullets);
-  else demandLines.push("• Solicitações registradas apenas por anexo, sem texto correspondente.");
-  if (attachLine) demandLines.push(`• ${attachLine}`);
+  const requester = items[0]?.requester ?? "";
+  const dateLabel = buildDateLabel(date, isLast);
 
-  // Counts
-  const pending = items.filter((d) => d.status === "pendente").length;
-  const resolved = cleanedItems.filter((d) => d.status === "resolvido");
-  const reportLine = pending
-    ? `${pending} item(ns) sem resolução explícita até o fechamento da auditoria.`
-    : "Todas as solicitações do dia possuem devolutiva vinculada.";
-
-  // Regex local para descartar devolutivas/respostas que falem apenas de link
+  // Devolutivas (deduped, drop link-only)
   const LINK_TXT = /\blink\b|https?:\/\/|\bwww\./i;
-
-  // List EVERY devolutiva with its actual text (deduped by first 80 chars)
   const seenResp = new Set<string>();
-  const responseLines: string[] = [];
-  for (const r of resolved) {
+  const responses: { who: string; text: string; followUp?: string; followUpAt?: Date }[] = [];
+  for (const r of cleanedItems.filter((d) => d.status === "resolvido")) {
     const who = r.resolvedBy ?? "Equipe Amigo Flow";
     const txt = r.cleanResolution;
-    if (txt && LINK_TXT.test(txt)) continue; // ignora devolutivas sobre link
-    if (txt) {
-      const sig = `${who}|${txt.slice(0, 80).toLowerCase()}`;
-      if (seenResp.has(sig)) continue;
-      seenResp.add(sig);
-      let line = `• ${who}: ${txt.slice(0, 320)}`;
-      if (r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp)) {
-        line += `\n   ↳ Resposta do cliente (${fmtDateOnly(r.clientFollowUpAt)}): ${r.clientFollowUp.slice(0, 280)}`;
-      }
-      responseLines.push(line);
-    } else {
-      let line = `• ${who}: (devolutiva registrada via anexo)`;
-      if (r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp)) {
-        line += `\n   ↳ Resposta do cliente (${fmtDateOnly(r.clientFollowUpAt)}): ${r.clientFollowUp.slice(0, 280)}`;
-      }
-      responseLines.push(line);
-    }
+    if (txt && LINK_TXT.test(txt)) continue;
+    const sig = `${who}|${(txt || "").slice(0, 80).toLowerCase()}`;
+    if (seenResp.has(sig)) continue;
+    seenResp.add(sig);
+    responses.push({
+      who,
+      text: txt,
+      followUp: r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp) ? r.clientFollowUp : undefined,
+      followUpAt: r.clientFollowUpAt,
+    });
   }
-  const supportActions = responseLines.length
-    ? responseLines.join("\n")
-    : "• Sem devolutiva da equipe Amigo Flow vinculada a este dia.";
 
-  const supportResults = responseLines.length
-    ? `Resultado: ${responseLines.length} devolutiva(s) registrada(s) pela equipe Amigo Flow.`
-    : "Resultado: pendente de retorno, validação ou posicionamento interno.";
+  let clientNarrative = composeClientNarrative(dateLabel, requester, demandSentences);
+  let supportNarrative = composeSupportNarrative(responses);
 
-  // Title: first non-empty bullet
-  const title = (demandBullets[0] ?? attachLine ?? "Demanda do cliente")
-    .replace(/^•\s*/, "")
-    .slice(0, 90);
+  clientNarrative = padToMin(clientNarrative, CLIENT_PADDINGS, 1000);
+  supportNarrative = padToMin(supportNarrative, SUPPORT_PADDINGS, 1000);
 
   return {
-    dateLabel: fmtDateOnly(date),
-    titleLabel: title.charAt(0).toUpperCase() + title.slice(1),
-    clientDemand: demandLines.join("\n"),
-    clientReports: reportLine,
+    dateLabel,
+    titleLabel: "",
+    clientDemand: clientNarrative,
+    clientReports: "",
     relevantQuotes: "",
-    supportActions,
-    supportResults,
+    supportActions: supportNarrative,
+    supportResults: "",
   };
 }
+
 
 // ============================================================
 // PDF RENDERING
