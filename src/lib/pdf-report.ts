@@ -46,6 +46,17 @@ export type DemandItem = {
   supportResults: string;
 };
 
+export type ReportMetrics = {
+  totalSolicitacoes: number;
+  totalRespostas: number;
+  pendentes: number;
+  resolvidas: number;
+  pctResolucao: number;
+  topRequesters: { name: string; count: number }[];
+  topResponders: { name: string; count: number }[];
+  satisfacao: { positivo: number; neutro: number; negativo: number };
+};
+
 export type ReportDraft = {
   title: string;
   subtitle: string;
@@ -64,6 +75,7 @@ export type ReportDraft = {
   actionsExecuted: string;
   currentPendencies: string;
   attachmentNotes: string;
+  metrics: ReportMetrics;
 };
 
 const SUPPORT_ORG = "Amigo Flow";
