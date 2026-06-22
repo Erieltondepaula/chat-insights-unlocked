@@ -991,6 +991,252 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
 }
 
 
+// ============================================================
+// CHARTS / METRICS RENDERER
+// ============================================================
+function renderMetrics(
+  doc: jsPDF,
+  m: ReportMetrics,
+  x: number,
+  y: number,
+  w: number,
+): number {
+  // KPI row: 4 chips
+  const kpis: { label: string; value: string; tone: [number, number, number] }[] = [
+    { label: "Solicitações", value: String(m.totalSolicitacoes), tone: BLUE },
+    { label: "Respostas", value: String(m.totalRespostas), tone: NAVY_DEEP },
+    { label: "Pendentes", value: String(m.pendentes), tone: ALERT_BORDER },
+    { label: "% Resolução", value: `${m.pctResolucao.toFixed(0)}%`, tone: [46, 139, 87] },
+  ];
+  const gap = 8;
+  const kw = (w - gap * 3) / 4;
+  const kh = 50;
+  y = ensureSpace(doc, y, kh + 12, x);
+  for (let i = 0; i < kpis.length; i++) {
+    const k = kpis[i];
+    const kx = x + i * (kw + gap);
+    doc.setFillColor(...INFO_BG);
+    doc.roundedRect(kx, y, kw, kh, 4, 4, "F");
+    doc.setFillColor(...k.tone);
+    doc.rect(kx, y, 3, kh, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(...k.tone);
+    doc.text(k.value, kx + 10, y + 24);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text(k.label, kx + 10, y + 40);
+  }
+  y += kh + 16;
+
+  // Two-column charts: Top solicitantes | Top respondentes
+  const colW = (w - 14) / 2;
+  let leftY = y;
+  let rightY = y;
+  leftY = renderBarChart(doc, "Quem mais solicitou", m.topRequesters, x, leftY, colW);
+  rightY = renderBarChart(
+    doc,
+    "Quem mais respondeu",
+    m.topResponders,
+    x + colW + 14,
+    rightY,
+    colW,
+  );
+  y = Math.max(leftY, rightY) + 10;
+
+  // Pendência x Resolução (stacked bar) + Satisfação (donut-ish)
+  leftY = renderStackBar(
+    doc,
+    "Pendência × Resolução",
+    [
+      { label: "Resolvidas", value: m.resolvidas, color: [46, 139, 87] },
+      { label: "Pendentes", value: m.pendentes, color: ALERT_BORDER },
+    ],
+    x,
+    y,
+    colW,
+  );
+  rightY = renderDonut(
+    doc,
+    "Satisfação do cliente",
+    [
+      { label: "Positivo", value: m.satisfacao.positivo, color: [46, 139, 87] },
+      { label: "Neutro", value: m.satisfacao.neutro, color: [110, 120, 132] },
+      { label: "Negativo", value: m.satisfacao.negativo, color: ALERT_BORDER },
+    ],
+    x + colW + 14,
+    y,
+    colW,
+  );
+  return Math.max(leftY, rightY) + 10;
+}
+
+function renderBarChart(
+  doc: jsPDF,
+  title: string,
+  items: { name: string; count: number }[],
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const rows = Math.max(items.length, 1);
+  const rowH = 16;
+  const h = 26 + rows * rowH + 10;
+  y = ensureSpace(doc, y, h + 4, x);
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, w, h, 3, 3, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.6);
+  doc.setTextColor(...NAVY);
+  doc.text(title, x + 10, y + 16);
+  if (!items.length) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text("Sem dados no período.", x + 10, y + 34);
+    return y + h;
+  }
+  const max = Math.max(...items.map((i) => i.count), 1);
+  const labelW = 70;
+  const barX = x + 10 + labelW;
+  const barMaxW = w - 20 - labelW - 30;
+  let by = y + 30;
+  for (const it of items) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.4);
+    doc.setTextColor(...TEXT);
+    const label = (it.name || "—").slice(0, 14);
+    doc.text(label, x + 10, by + 8);
+    const bw = (it.count / max) * barMaxW;
+    doc.setFillColor(...BLUE);
+    doc.rect(barX, by, bw, 9, "F");
+    doc.setTextColor(...NAVY);
+    doc.setFont("helvetica", "bold");
+    doc.text(String(it.count), barX + bw + 4, by + 8);
+    by += rowH;
+  }
+  return y + h;
+}
+
+function renderStackBar(
+  doc: jsPDF,
+  title: string,
+  parts: { label: string; value: number; color: [number, number, number] }[],
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const h = 90;
+  y = ensureSpace(doc, y, h + 4, x);
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, w, h, 3, 3, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.6);
+  doc.setTextColor(...NAVY);
+  doc.text(title, x + 10, y + 16);
+  const total = parts.reduce((s, p) => s + p.value, 0) || 1;
+  const barX = x + 10;
+  const barW = w - 20;
+  const barY = y + 28;
+  const barH = 18;
+  let cx = barX;
+  for (const p of parts) {
+    const segW = (p.value / total) * barW;
+    doc.setFillColor(...p.color);
+    doc.rect(cx, barY, segW, barH, "F");
+    cx += segW;
+  }
+  // Legend
+  let ly = barY + barH + 14;
+  for (const p of parts) {
+    doc.setFillColor(...p.color);
+    doc.rect(x + 10, ly - 6, 8, 8, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.4);
+    doc.setTextColor(...TEXT);
+    const pct = ((p.value / total) * 100).toFixed(0);
+    doc.text(`${p.label}: ${p.value} (${pct}%)`, x + 22, ly);
+    ly += 12;
+  }
+  return y + h;
+}
+
+function renderDonut(
+  doc: jsPDF,
+  title: string,
+  parts: { label: string; value: number; color: [number, number, number] }[],
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const h = 110;
+  y = ensureSpace(doc, y, h + 4, x);
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, w, h, 3, 3, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.6);
+  doc.setTextColor(...NAVY);
+  doc.text(title, x + 10, y + 16);
+
+  const total = parts.reduce((s, p) => s + p.value, 0);
+  const cx = x + 36;
+  const cy = y + 60;
+  const rOuter = 26;
+
+  if (!total) {
+    doc.setFillColor(220, 226, 232);
+    doc.circle(cx, cy, rOuter, "F");
+    doc.setFillColor(255, 255, 255);
+    doc.circle(cx, cy, rOuter * 0.55, "F");
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text("Sem retorno do cliente.", x + 76, cy);
+    return y + h;
+  }
+
+  // Pie via thin triangles
+  let start = -Math.PI / 2;
+  const steps = 64;
+  for (const p of parts) {
+    if (p.value <= 0) continue;
+    const ang = (p.value / total) * Math.PI * 2;
+    const segSteps = Math.max(2, Math.round((ang / (Math.PI * 2)) * steps));
+    doc.setFillColor(...p.color);
+    for (let i = 0; i < segSteps; i++) {
+      const a1 = start + (ang * i) / segSteps;
+      const a2 = start + (ang * (i + 1)) / segSteps;
+      const x1 = cx + Math.cos(a1) * rOuter;
+      const y1 = cy + Math.sin(a1) * rOuter;
+      const x2 = cx + Math.cos(a2) * rOuter;
+      const y2 = cy + Math.sin(a2) * rOuter;
+      doc.triangle(cx, cy, x1, y1, x2, y2, "F");
+    }
+    start += ang;
+  }
+  // Inner hole
+  doc.setFillColor(255, 255, 255);
+  doc.circle(cx, cy, rOuter * 0.55, "F");
+
+  // Legend
+  let ly = y + 36;
+  for (const p of parts) {
+    doc.setFillColor(...p.color);
+    doc.rect(x + 76, ly - 6, 8, 8, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.4);
+    doc.setTextColor(...TEXT);
+    const pct = total ? ((p.value / total) * 100).toFixed(0) : "0";
+    doc.text(`${p.label}: ${p.value} (${pct}%)`, x + 88, ly);
+    ly += 14;
+  }
+  return y + h;
+}
+
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
   if (y + needed > pageH - 22) {
