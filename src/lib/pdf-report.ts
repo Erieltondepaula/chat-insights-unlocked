@@ -927,7 +927,7 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
-  if (y + needed > pageH - 42) {
+  if (y + needed > pageH - 22) {
     doc.addPage();
     return margin;
   }
