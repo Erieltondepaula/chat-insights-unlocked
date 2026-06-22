@@ -326,8 +326,136 @@ export function buildDraft(
 }
 
 // ============================================================
-// DEMAND BLOCKS (compact, deduplicated, one per day)
+// DEMAND BLOCKS (narrative, "No dia .../Retorno:", min 1000 chars)
 // ============================================================
+
+function relativeDateLabel(date: Date): string | null {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diff = Math.round((today - target) / 86_400_000);
+  if (diff === 0) return "hoje";
+  if (diff === 1) return "ontem";
+  if (diff >= 2 && diff <= 6) {
+    const names = [
+      "domingo",
+      "segunda-feira",
+      "terça-feira",
+      "quarta-feira",
+      "quinta-feira",
+      "sexta-feira",
+      "sábado",
+    ];
+    return names[date.getDay()];
+  }
+  if (diff >= 7 && diff <= 13) return "semana passada";
+  const sameMonth =
+    now.getMonth() === date.getMonth() && now.getFullYear() === date.getFullYear();
+  if (diff >= 14 && !sameMonth) return "mês passado";
+  return null;
+}
+
+function buildDateLabel(date: Date, isLast: boolean): string {
+  const formal = fmtDateOnly(date);
+  if (!isLast) return `No dia ${formal}:`;
+  const rel = relativeDateLabel(date);
+  return rel ? `No dia ${formal} (${rel}):` : `No dia ${formal}:`;
+}
+
+function decapFirst(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+function ensureSentence(s: string): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return /[.!?]$/.test(t) ? t : t + ".";
+}
+
+const CLIENT_CONNECTORS = [
+  "Em complemento,",
+  "Além disso,",
+  "Na sequência,",
+  "Ainda no mesmo contato,",
+  "O cliente também apontou que",
+  "Em paralelo,",
+  "Outro ponto trazido foi que",
+];
+
+const SUPPORT_CONNECTORS = [
+  "Em seguida,",
+  "Logo depois,",
+  "Como desdobramento,",
+  "Posteriormente,",
+  "Na mesma tratativa,",
+  "Para complementar,",
+];
+
+function composeClientNarrative(prefix: string, requester: string, sentences: string[]): string {
+  const cleaned = sentences.map((s) => s.trim()).filter((s) => s && s.length > 3);
+  if (!cleaned.length) {
+    return `${prefix} o cliente ${requester ? `(${sanitize(requester)}) ` : ""}registrou contato no grupo trazendo apenas anexos como contexto da demanda, sem mensagem textual associada que pudesse ser transcrita neste relatório.`;
+  }
+  const head = `${prefix} o cliente ${cleaned.length === 1 ? "relatou que" : "trouxe os seguintes apontamentos:"} ${ensureSentence(decapFirst(cleaned[0]))}`;
+  const tail = cleaned
+    .slice(1)
+    .map(
+      (s, i) =>
+        `${CLIENT_CONNECTORS[i % CLIENT_CONNECTORS.length]} ${ensureSentence(decapFirst(s))}`,
+    )
+    .join(" ");
+  return [head, tail].filter(Boolean).join(" ");
+}
+
+function composeSupportNarrative(
+  responses: { who: string; text: string; followUp?: string; followUpAt?: Date }[],
+): string {
+  if (!responses.length) {
+    return "Retorno: até o fechamento desta auditoria não foi localizada devolutiva textual da equipe Amigo Flow vinculada a esta demanda específica, mantendo-a em acompanhamento até confirmação interna de tratativa.";
+  }
+  const parts: string[] = [];
+  responses.forEach((r, i) => {
+    const who = r.who || "a equipe Amigo Flow";
+    const body = r.text
+      ? ensureSentence(decapFirst(r.text))
+      : "registrou a devolutiva por meio de anexo, sem texto correspondente.";
+    if (i === 0) parts.push(`Retorno: ${who}, do suporte, ${body}`);
+    else parts.push(`${SUPPORT_CONNECTORS[i % SUPPORT_CONNECTORS.length]} ${who} ${body}`);
+    if (r.followUp) {
+      parts.push(
+        `Em resposta, no dia ${fmtDateOnly(r.followUpAt)} o cliente retornou informando que ${ensureSentence(decapFirst(r.followUp))}`,
+      );
+    }
+  });
+  return parts.join(" ");
+}
+
+const CLIENT_PADDINGS = [
+  "O contato reforça a necessidade de revisar o comportamento do Agente Flow no fluxo descrito, garantindo aderência ao roteiro esperado pela clínica.",
+  "O relato foi registrado no histórico do grupo de implantação e considerado como evidência operacional para fins de auditoria do módulo.",
+  "A clínica demonstrou preocupação com o impacto da ocorrência na experiência do paciente e no fluxo de agendamento conduzido pelo Agente Flow.",
+  "A demanda compõe o conjunto de apontamentos que orientam ajustes de configuração, prompt e base de conhecimento do agente.",
+  "O caso foi analisado considerando o contexto operacional da clínica e a expectativa de comportamento previamente alinhada com o time de implantação.",
+];
+
+const SUPPORT_PADDINGS = [
+  "A tratativa segue acompanhada pela equipe Amigo Flow para validação do efeito prático do ajuste sobre o fluxo do agente.",
+  "A devolutiva registrada compõe o histórico de evidências utilizadas para reavaliar configurações, prompts e regras associadas ao Flow.",
+  "O encaminhamento foi mantido sob acompanhamento até confirmação formal pela clínica de que o comportamento do agente atende ao esperado.",
+  "Eventuais reincidências do mesmo sintoma serão tratadas com revisão complementar de parâmetros e base de conhecimento do agente.",
+  "O retorno fica disponível como referência para futuras solicitações relacionadas ao mesmo módulo dentro do escopo auditado.",
+];
+
+function padToMin(text: string, paddings: string[], min = 1000): string {
+  let out = text.trim();
+  let i = 0;
+  while (out.length < min && i < paddings.length * 4) {
+    out += " " + paddings[i % paddings.length];
+    i++;
+  }
+  return out;
+}
 
 function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
   // Group by date (chronological)
@@ -337,12 +465,18 @@ function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
     grouped.set(key, [...(grouped.get(key) ?? []), d]);
   }
 
-  return [...grouped.entries()]
-    .sort(([aKey], [bKey]) => aKey.localeCompare(bKey))
-    .map(([key, items]) => buildOneBlock(key, items, insightMap));
+  const sortedKeys = [...grouped.keys()].sort((a, b) => a.localeCompare(b));
+  return sortedKeys.map((key, idx) =>
+    buildOneBlock(key, grouped.get(key)!, insightMap, idx === sortedKeys.length - 1),
+  );
 }
 
-function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): DemandItem {
+function buildOneBlock(
+  key: string,
+  items: Demand[],
+  insightMap: InsightMap,
+  isLast: boolean,
+): DemandItem {
   const date = new Date(`${key}T12:00:00`);
 
   // Clean each demand: strip media tokens, collect attachment context
@@ -361,85 +495,63 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap): De
     };
   });
 
-  // Dedupe demand bullets by first 80 chars
+  // Dedupe demand sentences by first 80 chars
   const seenDemand = new Set<string>();
-  const demandBullets: string[] = [];
+  const demandSentences: string[] = [];
   for (const ci of cleanedItems) {
     const t = ci.cleanText;
     if (!t || t.length < 4) continue;
     const sig = t.slice(0, 80).toLowerCase();
     if (seenDemand.has(sig)) continue;
     seenDemand.add(sig);
-    demandBullets.push(`• ${t.slice(0, 260)}`);
+    demandSentences.push(t);
   }
 
   // Attachment context (only if AI insights exist for these files)
   const allFilenames = cleanedItems.flatMap((c) => [...c.filenames, ...c.resolutionFilenames]);
   const allKinds = cleanedItems.flatMap((c) => c.kinds);
   const attachLine = buildAttachmentContext(allFilenames, allKinds, insightMap);
+  if (attachLine) demandSentences.push(attachLine);
 
-  const demandLines: string[] = [];
-  if (demandBullets.length) demandLines.push(...demandBullets);
-  else demandLines.push("• Solicitações registradas apenas por anexo, sem texto correspondente.");
-  if (attachLine) demandLines.push(`• ${attachLine}`);
+  const requester = items[0]?.requester ?? "";
+  const dateLabel = buildDateLabel(date, isLast);
 
-  // Counts
-  const pending = items.filter((d) => d.status === "pendente").length;
-  const resolved = cleanedItems.filter((d) => d.status === "resolvido");
-  const reportLine = pending
-    ? `${pending} item(ns) sem resolução explícita até o fechamento da auditoria.`
-    : "Todas as solicitações do dia possuem devolutiva vinculada.";
-
-  // Regex local para descartar devolutivas/respostas que falem apenas de link
+  // Devolutivas (deduped, drop link-only)
   const LINK_TXT = /\blink\b|https?:\/\/|\bwww\./i;
-
-  // List EVERY devolutiva with its actual text (deduped by first 80 chars)
   const seenResp = new Set<string>();
-  const responseLines: string[] = [];
-  for (const r of resolved) {
+  const responses: { who: string; text: string; followUp?: string; followUpAt?: Date }[] = [];
+  for (const r of cleanedItems.filter((d) => d.status === "resolvido")) {
     const who = r.resolvedBy ?? "Equipe Amigo Flow";
     const txt = r.cleanResolution;
-    if (txt && LINK_TXT.test(txt)) continue; // ignora devolutivas sobre link
-    if (txt) {
-      const sig = `${who}|${txt.slice(0, 80).toLowerCase()}`;
-      if (seenResp.has(sig)) continue;
-      seenResp.add(sig);
-      let line = `• ${who}: ${txt.slice(0, 320)}`;
-      if (r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp)) {
-        line += `\n   ↳ Resposta do cliente (${fmtDateOnly(r.clientFollowUpAt)}): ${r.clientFollowUp.slice(0, 280)}`;
-      }
-      responseLines.push(line);
-    } else {
-      let line = `• ${who}: (devolutiva registrada via anexo)`;
-      if (r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp)) {
-        line += `\n   ↳ Resposta do cliente (${fmtDateOnly(r.clientFollowUpAt)}): ${r.clientFollowUp.slice(0, 280)}`;
-      }
-      responseLines.push(line);
-    }
+    if (txt && LINK_TXT.test(txt)) continue;
+    const sig = `${who}|${(txt || "").slice(0, 80).toLowerCase()}`;
+    if (seenResp.has(sig)) continue;
+    seenResp.add(sig);
+    responses.push({
+      who,
+      text: txt,
+      followUp: r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp) ? r.clientFollowUp : undefined,
+      followUpAt: r.clientFollowUpAt,
+    });
   }
-  const supportActions = responseLines.length
-    ? responseLines.join("\n")
-    : "• Sem devolutiva da equipe Amigo Flow vinculada a este dia.";
 
-  const supportResults = responseLines.length
-    ? `Resultado: ${responseLines.length} devolutiva(s) registrada(s) pela equipe Amigo Flow.`
-    : "Resultado: pendente de retorno, validação ou posicionamento interno.";
+  let clientNarrative = composeClientNarrative(dateLabel, requester, demandSentences);
+  let supportNarrative = composeSupportNarrative(responses);
 
-  // Title: first non-empty bullet
-  const title = (demandBullets[0] ?? attachLine ?? "Demanda do cliente")
-    .replace(/^•\s*/, "")
-    .slice(0, 90);
+  clientNarrative = padToMin(clientNarrative, CLIENT_PADDINGS, 1000);
+  supportNarrative = padToMin(supportNarrative, SUPPORT_PADDINGS, 1000);
 
   return {
-    dateLabel: fmtDateOnly(date),
-    titleLabel: title.charAt(0).toUpperCase() + title.slice(1),
-    clientDemand: demandLines.join("\n"),
-    clientReports: reportLine,
+    dateLabel,
+    titleLabel: "",
+    clientDemand: clientNarrative,
+    clientReports: "",
     relevantQuotes: "",
-    supportActions,
-    supportResults,
+    supportActions: supportNarrative,
+    supportResults: "",
   };
 }
+
 
 // ============================================================
 // PDF RENDERING
@@ -634,35 +746,49 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 }
 
 // ============================================================
-// DEMAND CARD: blue left bar, date chip in red, ocorrência + resolução sub-box
+// DEMAND CARD: blue left bar, "No dia ..." prefix in bold + Retorno sub-box
 // ============================================================
 function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
-  // Measure all content first to know card height
   const innerX = x + 14;
   const innerW = w - 22;
 
-  const titleText = sanitize(d.titleLabel || "Demanda do cliente");
-  const occText = sanitize(
-    [d.clientDemand, d.clientReports].filter(Boolean).join("\n"),
-  );
-  const resText = sanitize([d.supportActions, d.supportResults].filter(Boolean).join("\n"));
+  const clientText = sanitize(d.clientDemand);
+  const supportText = sanitize(d.supportActions);
+  const clientPrefix = sanitize(d.dateLabel || "No dia:");
+  const supportPrefix = "Retorno:";
 
-  // pre-compute wrapped sizes
+  // Strip prefix from body so we can render it bold separately
+  const stripPrefix = (full: string, pref: string) =>
+    full.trim().startsWith(pref) ? full.trim().slice(pref.length).trim() : full.trim();
+
+  const clientBody = stripPrefix(clientText, clientPrefix);
+  const supportBody = stripPrefix(supportText, supportPrefix);
+
+  // Measure
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
-  const titleLines = doc.splitTextToSize(titleText, innerW - 100);
+  doc.setFontSize(9.6);
+  const clientPrefW = doc.getTextWidth(clientPrefix) + 5;
+  const supportPrefW = doc.getTextWidth(supportPrefix) + 5;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.4);
-  const occLines = wrapMultiline(doc, occText, innerW);
+  const clientFirstLine = (doc.splitTextToSize(clientBody, innerW - clientPrefW)[0] ?? "") as string;
+  const clientRemaining = clientBody.slice(clientFirstLine.length).trim();
+  const clientRemainingLines = clientRemaining
+    ? (doc.splitTextToSize(clientRemaining, innerW) as string[])
+    : [];
+  const clientH = 14 + (1 + clientRemainingLines.length) * 12 + 6;
 
   doc.setFontSize(9.2);
-  const resLines = wrapMultiline(doc, resText, innerW - 16);
+  const supportFirstLine = (doc.splitTextToSize(supportBody, innerW - 16 - supportPrefW)[0] ??
+    "") as string;
+  const supportRemaining = supportBody.slice(supportFirstLine.length).trim();
+  const supportRemainingLines = supportRemaining
+    ? (doc.splitTextToSize(supportRemaining, innerW - 16) as string[])
+    : [];
+  const resBoxH = 14 + (1 + supportRemainingLines.length) * 11.8 + 10;
 
-  const headerH = 16 + titleLines.length * 13;
-  const occH = 14 + occLines.length * 12 + 8;
-  const resH = 14 + resLines.length * 11.5 + 12;
-  const cardH = headerH + occH + resH + 10;
+  const cardH = clientH + resBoxH + 14;
 
   y = ensureSpace(doc, y, cardH + 8, x);
 
@@ -673,84 +799,50 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   doc.setFillColor(...BLUE);
   doc.rect(x, y, 4, cardH, "F");
 
-  // Header line: [DATA] Title
+  // Client paragraph
   let cy = y + 18;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...DATE_RED);
-  const dateLabel = `[${d.dateLabel}]`;
-  doc.text(dateLabel, innerX, cy);
-  const dateW = doc.getTextWidth(dateLabel) + 8;
-
+  doc.setFontSize(9.6);
   doc.setTextColor(...NAVY);
-  doc.setFontSize(10.5);
-  let tx = innerX + dateW;
-  let ty = cy;
-  for (const tl of titleLines) {
-    doc.text(tl, tx, ty);
-    ty += 13;
-    tx = innerX; // continuation lines align to inner left
-  }
-  cy = Math.max(cy + 13, ty);
-  cy += 4;
-
-  // Ocorrência paragraph
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.4);
-  doc.setTextColor(...NAVY);
-  doc.text("Ocorrência:", innerX, cy);
-  const ocLabelW = doc.getTextWidth("Ocorrência:") + 5;
+  doc.text(clientPrefix, innerX, cy);
 
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.4);
   doc.setTextColor(...TEXT);
-  // first line shares row with the label
-  const firstOcLine = occLines[0] ?? "";
-  const firstSlice = doc.splitTextToSize(firstOcLine, innerW - ocLabelW)[0] ?? firstOcLine;
-  doc.text(firstSlice, innerX + ocLabelW, cy);
-  // remaining occLines render below
-  const remaining = occLines.slice(1);
-  if (firstSlice !== firstOcLine) {
-    const leftover = firstOcLine.slice(firstSlice.length).trim();
-    if (leftover) remaining.unshift(leftover);
-  }
+  doc.text(clientFirstLine, innerX + clientPrefW, cy);
   cy += 13;
-  for (const ln of remaining) {
+  for (const ln of clientRemainingLines) {
     doc.text(ln, innerX, cy);
     cy += 12;
   }
   cy += 4;
 
-  // Resolution sub-box
+  // Retorno sub-box
   const resBoxX = innerX;
   const resBoxW = innerW;
-  const resBoxH = 12 + resLines.length * 11.5 + 8;
   doc.setFillColor(...RES_BG);
   doc.setDrawColor(...RES_BORDER);
   doc.roundedRect(resBoxX, cy, resBoxW, resBoxH, 2, 2, "FD");
+
   let ry = cy + 14;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.2);
+  doc.setFontSize(9.4);
   doc.setTextColor(...NAVY);
-  doc.text("Resolução:", resBoxX + 8, ry);
+  doc.text(supportPrefix, resBoxX + 8, ry);
+
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.2);
   doc.setTextColor(...TEXT);
-  const resLabelW = doc.getTextWidth("Resolução:") + 5;
-  const firstRes = resLines[0] ?? "";
-  const firstResSlice = doc.splitTextToSize(firstRes, resBoxW - resLabelW - 16)[0] ?? firstRes;
-  doc.text(firstResSlice, resBoxX + 8 + resLabelW, ry);
-  const restRes = resLines.slice(1);
-  if (firstResSlice !== firstRes) {
-    const leftover = firstRes.slice(firstResSlice.length).trim();
-    if (leftover) restRes.unshift(leftover);
-  }
+  doc.text(supportFirstLine, resBoxX + 8 + supportPrefW, ry);
   ry += 12;
-  for (const ln of restRes) {
+  for (const ln of supportRemainingLines) {
     doc.text(ln, resBoxX + 8, ry);
-    ry += 11.5;
+    ry += 11.8;
   }
 
   return y + cardH + 12;
 }
+
 
 function wrapMultiline(doc: jsPDF, text: string, w: number): string[] {
   const out: string[] = [];

@@ -170,11 +170,10 @@ function Index() {
         combined += (combined ? "\n" : "") + t;
       }
       const allMsgs = combined ? parseWhatsApp(combined) : [];
-      // Janela de análise: somente mensagens entre 2 e 3 semanas atrás
-      // (exclui o que é mais recente que 2 semanas e o que é mais antigo que 3 semanas).
+      // Janela de análise: últimas 2 semanas (período máximo).
       const now = Date.now();
-      const windowEnd = now - 14 * 86_400_000;
-      const windowStart = now - 21 * 86_400_000;
+      const windowEnd = now;
+      const windowStart = now - 14 * 86_400_000;
       const msgs = allMsgs.filter(
         (m) => m.date.getTime() >= windowStart && m.date.getTime() <= windowEnd,
       );
@@ -194,7 +193,7 @@ function Index() {
       setAttachmentInsights(insights);
       if (msgs.length === 0 && allMsgs.length > 0) {
         setError(
-          "Nenhuma mensagem encontrada na janela de 2 a 3 semanas atrás. A conversa pode ser muito recente ou muito antiga para o recorte solicitado.",
+          "Nenhuma mensagem encontrada nas últimas 2 semanas. A conversa pode estar fora do recorte solicitado.",
         );
         setAnalysis(null);
       } else if (
