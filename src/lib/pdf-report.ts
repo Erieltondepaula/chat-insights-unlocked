@@ -460,7 +460,7 @@ const SUPPORT_PADDINGS = [
   "O retorno fica disponível como referência para futuras solicitações relacionadas ao mesmo módulo dentro do escopo auditado.",
 ];
 
-function padToMin(text: string, paddings: string[], min = 1000): string {
+function padToMin(text: string, paddings: string[], min = 600): string {
   let out = text.trim();
   let i = 0;
   while (out.length < min && i < paddings.length * 4) {
