@@ -347,6 +347,55 @@ export function buildDraft(
         : "• Recomenda-se manter acompanhamento até confirmação formal das pendências.",
     ].join("\n"),
     attachmentNotes,
+    metrics: buildMetrics(a),
+  };
+}
+
+const POS_RE = /\b(obrigad[ao]|valeu|perfeito|show|massa|excelente|maravilh|otim[oa]|legal|topp?|funcionou|deu certo|resolvido|certinho)\b/i;
+const NEG_RE = /\b(n[aã]o (?:funcionou|resolveu|deu certo)|continua|ainda (?:n[aã]o|com)|de novo|persiste|errado|piorou|reincid|p[eé]ssim|ruim)\b/i;
+
+function buildMetrics(a: Analysis): ReportMetrics {
+  const totalSolicitacoes = a.demands.length;
+  const resolvidas = a.demands.filter((d) => d.status === "resolvido").length;
+  const pendentes = a.demands.filter((d) => d.status === "pendente").length;
+  const totalRespostas = resolvidas;
+  const pctResolucao = totalSolicitacoes ? (resolvidas / totalSolicitacoes) * 100 : 0;
+
+  const reqMap = new Map<string, number>();
+  for (const d of a.demands) {
+    const n = sanitize(d.requester || "—").split(/\s+/)[0] || "—";
+    reqMap.set(n, (reqMap.get(n) ?? 0) + 1);
+  }
+  const topRequesters = [...reqMap.entries()]
+    .sort((x, y) => y[1] - x[1])
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+
+  const topResponders = a.demandStats.resolvedoresTop.slice(0, 5).map((r) => ({
+    name: r.name,
+    count: r.count,
+  }));
+
+  let positivo = 0,
+    neutro = 0,
+    negativo = 0;
+  for (const d of a.demands) {
+    if (!d.clientFollowUp) continue;
+    const t = d.clientFollowUp.toLowerCase();
+    if (NEG_RE.test(t)) negativo++;
+    else if (POS_RE.test(t)) positivo++;
+    else neutro++;
+  }
+
+  return {
+    totalSolicitacoes,
+    totalRespostas,
+    pendentes,
+    resolvidas,
+    pctResolucao,
+    topRequesters,
+    topResponders,
+    satisfacao: { positivo, neutro, negativo },
   };
 }
 
