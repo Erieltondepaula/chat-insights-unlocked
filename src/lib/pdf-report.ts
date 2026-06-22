@@ -746,35 +746,49 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 }
 
 // ============================================================
-// DEMAND CARD: blue left bar, date chip in red, ocorrência + resolução sub-box
+// DEMAND CARD: blue left bar, "No dia ..." prefix in bold + Retorno sub-box
 // ============================================================
 function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
-  // Measure all content first to know card height
   const innerX = x + 14;
   const innerW = w - 22;
 
-  const titleText = sanitize(d.titleLabel || "Demanda do cliente");
-  const occText = sanitize(
-    [d.clientDemand, d.clientReports].filter(Boolean).join("\n"),
-  );
-  const resText = sanitize([d.supportActions, d.supportResults].filter(Boolean).join("\n"));
+  const clientText = sanitize(d.clientDemand);
+  const supportText = sanitize(d.supportActions);
+  const clientPrefix = sanitize(d.dateLabel || "No dia:");
+  const supportPrefix = "Retorno:";
 
-  // pre-compute wrapped sizes
+  // Strip prefix from body so we can render it bold separately
+  const stripPrefix = (full: string, pref: string) =>
+    full.trim().startsWith(pref) ? full.trim().slice(pref.length).trim() : full.trim();
+
+  const clientBody = stripPrefix(clientText, clientPrefix);
+  const supportBody = stripPrefix(supportText, supportPrefix);
+
+  // Measure
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
-  const titleLines = doc.splitTextToSize(titleText, innerW - 100);
+  doc.setFontSize(9.6);
+  const clientPrefW = doc.getTextWidth(clientPrefix) + 5;
+  const supportPrefW = doc.getTextWidth(supportPrefix) + 5;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.4);
-  const occLines = wrapMultiline(doc, occText, innerW);
+  const clientFirstLine = (doc.splitTextToSize(clientBody, innerW - clientPrefW)[0] ?? "") as string;
+  const clientRemaining = clientBody.slice(clientFirstLine.length).trim();
+  const clientRemainingLines = clientRemaining
+    ? (doc.splitTextToSize(clientRemaining, innerW) as string[])
+    : [];
+  const clientH = 14 + (1 + clientRemainingLines.length) * 12 + 6;
 
   doc.setFontSize(9.2);
-  const resLines = wrapMultiline(doc, resText, innerW - 16);
+  const supportFirstLine = (doc.splitTextToSize(supportBody, innerW - 16 - supportPrefW)[0] ??
+    "") as string;
+  const supportRemaining = supportBody.slice(supportFirstLine.length).trim();
+  const supportRemainingLines = supportRemaining
+    ? (doc.splitTextToSize(supportRemaining, innerW - 16) as string[])
+    : [];
+  const resBoxH = 14 + (1 + supportRemainingLines.length) * 11.8 + 10;
 
-  const headerH = 16 + titleLines.length * 13;
-  const occH = 14 + occLines.length * 12 + 8;
-  const resH = 14 + resLines.length * 11.5 + 12;
-  const cardH = headerH + occH + resH + 10;
+  const cardH = clientH + resBoxH + 14;
 
   y = ensureSpace(doc, y, cardH + 8, x);
 
@@ -785,84 +799,50 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   doc.setFillColor(...BLUE);
   doc.rect(x, y, 4, cardH, "F");
 
-  // Header line: [DATA] Title
+  // Client paragraph
   let cy = y + 18;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...DATE_RED);
-  const dateLabel = `[${d.dateLabel}]`;
-  doc.text(dateLabel, innerX, cy);
-  const dateW = doc.getTextWidth(dateLabel) + 8;
-
+  doc.setFontSize(9.6);
   doc.setTextColor(...NAVY);
-  doc.setFontSize(10.5);
-  let tx = innerX + dateW;
-  let ty = cy;
-  for (const tl of titleLines) {
-    doc.text(tl, tx, ty);
-    ty += 13;
-    tx = innerX; // continuation lines align to inner left
-  }
-  cy = Math.max(cy + 13, ty);
-  cy += 4;
-
-  // Ocorrência paragraph
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.4);
-  doc.setTextColor(...NAVY);
-  doc.text("Ocorrência:", innerX, cy);
-  const ocLabelW = doc.getTextWidth("Ocorrência:") + 5;
+  doc.text(clientPrefix, innerX, cy);
 
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.4);
   doc.setTextColor(...TEXT);
-  // first line shares row with the label
-  const firstOcLine = occLines[0] ?? "";
-  const firstSlice = doc.splitTextToSize(firstOcLine, innerW - ocLabelW)[0] ?? firstOcLine;
-  doc.text(firstSlice, innerX + ocLabelW, cy);
-  // remaining occLines render below
-  const remaining = occLines.slice(1);
-  if (firstSlice !== firstOcLine) {
-    const leftover = firstOcLine.slice(firstSlice.length).trim();
-    if (leftover) remaining.unshift(leftover);
-  }
+  doc.text(clientFirstLine, innerX + clientPrefW, cy);
   cy += 13;
-  for (const ln of remaining) {
+  for (const ln of clientRemainingLines) {
     doc.text(ln, innerX, cy);
     cy += 12;
   }
   cy += 4;
 
-  // Resolution sub-box
+  // Retorno sub-box
   const resBoxX = innerX;
   const resBoxW = innerW;
-  const resBoxH = 12 + resLines.length * 11.5 + 8;
   doc.setFillColor(...RES_BG);
   doc.setDrawColor(...RES_BORDER);
   doc.roundedRect(resBoxX, cy, resBoxW, resBoxH, 2, 2, "FD");
+
   let ry = cy + 14;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.2);
+  doc.setFontSize(9.4);
   doc.setTextColor(...NAVY);
-  doc.text("Resolução:", resBoxX + 8, ry);
+  doc.text(supportPrefix, resBoxX + 8, ry);
+
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.2);
   doc.setTextColor(...TEXT);
-  const resLabelW = doc.getTextWidth("Resolução:") + 5;
-  const firstRes = resLines[0] ?? "";
-  const firstResSlice = doc.splitTextToSize(firstRes, resBoxW - resLabelW - 16)[0] ?? firstRes;
-  doc.text(firstResSlice, resBoxX + 8 + resLabelW, ry);
-  const restRes = resLines.slice(1);
-  if (firstResSlice !== firstRes) {
-    const leftover = firstRes.slice(firstResSlice.length).trim();
-    if (leftover) restRes.unshift(leftover);
-  }
+  doc.text(supportFirstLine, resBoxX + 8 + supportPrefW, ry);
   ry += 12;
-  for (const ln of restRes) {
+  for (const ln of supportRemainingLines) {
     doc.text(ln, resBoxX + 8, ry);
-    ry += 11.5;
+    ry += 11.8;
   }
 
   return y + cardH + 12;
 }
+
 
 function wrapMultiline(doc: jsPDF, text: string, w: number): string[] {
   const out: string[] = [];
