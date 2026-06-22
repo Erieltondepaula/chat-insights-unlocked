@@ -75,6 +75,15 @@ const CLIENT_ORG = "Clínica Contratante";
 
 // Remove zero-width / bidi marks that WhatsApp injects (especially around media)
 // Remove emojis & non-BMP chars (helvetica from jsPDF doesn't render them — they appear as garbage / weird spacing)
+function flowify(s: string): string {
+  // Substitui IA, I.A., Bot, Robô, Robo (qualquer caixa) por "Flow".
+  // Usa lookarounds em vez de \b para funcionar com "Robô".
+  return s
+    .replace(/(?<![A-Za-zÀ-ÿ0-9])(I\.?A\.?|Bot|Rob[oô])(?![A-Za-zÀ-ÿ0-9])/gi, "Flow")
+    .replace(/(?<![A-Za-zÀ-ÿ0-9])(intelig[eê]ncia\s+artificial)(?![A-Za-zÀ-ÿ0-9])/gi, "Flow")
+    .replace(/(?<![A-Za-zÀ-ÿ0-9])(chatbot|agente\s+flow|agente)(?![A-Za-zÀ-ÿ0-9])/gi, "Flow");
+}
+
 function sanitize(input: string): string {
   if (!input) return "";
   let s = input;
@@ -87,6 +96,10 @@ function sanitize(input: string): string {
   s = s.replace(/[\u{1F000}-\u{1FFFF}]/gu, "");
   // Replace any control chars
   s = s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
+  // Substitui referências a IA/Bot/Robô por "Flow"
+  s = flowify(s);
+  // Colapsa "Flow Flow" / "Flow flow" repetidos resultantes da substituição
+  s = s.replace(/\b(Flow)(\s+Flow)+\b/gi, "Flow");
   return s;
 }
 
