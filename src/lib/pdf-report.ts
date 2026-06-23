@@ -1120,15 +1120,45 @@ function renderMetrics(
     doc,
     "Satisfação do cliente",
     [
-      { label: "Positivo", value: m.satisfacao.positivo, color: [46, 139, 87] },
+      { label: "Muito satisfeito", value: m.satisfacao.muitoSatisfeito, color: [22, 110, 70] },
+      { label: "Satisfeito", value: m.satisfacao.satisfeito, color: [46, 139, 87] },
       { label: "Neutro", value: m.satisfacao.neutro, color: [110, 120, 132] },
-      { label: "Negativo", value: m.satisfacao.negativo, color: ALERT_BORDER },
+      { label: "Insatisfeito", value: m.satisfacao.insatisfeito, color: ALERT_BORDER },
+      { label: "Risco de churn", value: m.satisfacao.churnRisk, color: [140, 20, 40] },
     ],
     x + colW + 14,
     y,
     colW,
   );
-  return Math.max(leftY, rightY) + 10;
+  y = Math.max(leftY, rightY) + 10;
+
+  // Alerta de risco de churn — só aparece se houver sinais
+  if (m.satisfacao.churnRisk > 0 || m.churnQuotes.length > 0) {
+    const ah = 26 + Math.min(m.churnQuotes.length, 3) * 12 + 10;
+    y = ensureSpace(doc, y, ah + 4, x);
+    doc.setFillColor(255, 240, 240);
+    doc.setDrawColor(...ALERT_BORDER);
+    doc.roundedRect(x, y, w, ah, 3, 3, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...ALERT_BORDER);
+    doc.text(
+      `Alerta de risco de churn: ${m.satisfacao.churnRisk} sinal(is) detectado(s)`,
+      x + 10,
+      y + 16,
+    );
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.6);
+    doc.setTextColor(...TEXT);
+    let qy = y + 30;
+    for (const q of m.churnQuotes.slice(0, 3)) {
+      const line = doc.splitTextToSize(`“${q}”`, w - 20)[0];
+      doc.text(line, x + 10, qy);
+      qy += 12;
+    }
+    y += ah + 8;
+  }
+  return y;
 }
 
 function renderBarChart(
