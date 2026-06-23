@@ -55,7 +55,14 @@ export type ReportMetrics = {
   pctResolucao: number;
   topRequesters: { name: string; count: number }[];
   topResponders: { name: string; count: number }[];
-  satisfacao: { positivo: number; neutro: number; negativo: number };
+  satisfacao: {
+    muitoSatisfeito: number;
+    satisfeito: number;
+    neutro: number;
+    insatisfeito: number;
+    churnRisk: number;
+  };
+  churnQuotes: string[];
 };
 
 export type ReportDraft = {
