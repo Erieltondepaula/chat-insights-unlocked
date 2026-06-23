@@ -861,7 +861,9 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       contentW,
     );
 
-  // ----- 6. Indicadores Visuais (gráficos)
+  // ----- 6. Indicadores Visuais (gráficos) — sempre em página dedicada
+  doc.addPage();
+  y = margin;
   y = sectionTitle(doc, "6. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
 
