@@ -671,8 +671,8 @@ function buildOneBlock(
   let clientNarrative = composeClientNarrative(dateLabel, requester, demandSentences);
   let supportNarrative = composeSupportNarrative(responses);
 
-  clientNarrative = padToMin(clientNarrative, CLIENT_PADDINGS, 600);
-  supportNarrative = padToMin(supportNarrative, SUPPORT_PADDINGS, 500);
+  clientNarrative = padToMin(clientNarrative, CLIENT_PADDINGS, 260);
+  supportNarrative = padToMin(supportNarrative, SUPPORT_PADDINGS, 180);
 
   return {
     dateLabel,
@@ -861,7 +861,9 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       contentW,
     );
 
-  // ----- 6. Indicadores Visuais (gráficos)
+  // ----- 6. Indicadores Visuais (gráficos) — sempre em página dedicada
+  doc.addPage();
+  y = margin;
   y = sectionTitle(doc, "6. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
 
@@ -1328,7 +1330,7 @@ function renderDonut(
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
-  if (y + needed > pageH - 22) {
+  if (y + needed > pageH - 14) {
     doc.addPage();
     return margin;
   }
