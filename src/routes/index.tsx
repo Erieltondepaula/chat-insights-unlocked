@@ -170,10 +170,12 @@ function Index() {
         combined += (combined ? "\n" : "") + t;
       }
       const allMsgs = combined ? parseWhatsApp(combined) : [];
-      // Janela de análise: últimas 2 semanas (período máximo).
-      const now = Date.now();
-      const windowEnd = now;
-      const windowStart = now - 14 * 86_400_000;
+      // Janela de análise: 2 semanas a partir da ÚLTIMA conversa registrada (não do dia atual).
+      const lastTs = allMsgs.length
+        ? Math.max(...allMsgs.map((m) => m.date.getTime()))
+        : Date.now();
+      const windowEnd = lastTs;
+      const windowStart = lastTs - 14 * 86_400_000;
       const msgs = allMsgs.filter(
         (m) => m.date.getTime() >= windowStart && m.date.getTime() <= windowEnd,
       );
