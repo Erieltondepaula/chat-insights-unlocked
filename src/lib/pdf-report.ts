@@ -671,8 +671,8 @@ function buildOneBlock(
   let clientNarrative = composeClientNarrative(dateLabel, requester, demandSentences);
   let supportNarrative = composeSupportNarrative(responses);
 
-  clientNarrative = padToMin(clientNarrative, CLIENT_PADDINGS, 600);
-  supportNarrative = padToMin(supportNarrative, SUPPORT_PADDINGS, 500);
+  clientNarrative = padToMin(clientNarrative, CLIENT_PADDINGS, 260);
+  supportNarrative = padToMin(supportNarrative, SUPPORT_PADDINGS, 180);
 
   return {
     dateLabel,
