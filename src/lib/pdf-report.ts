@@ -359,8 +359,16 @@ export function buildDraft(
   };
 }
 
-const POS_RE = /\b(obrigad[ao]|valeu|perfeito|show|massa|excelente|maravilh|otim[oa]|legal|topp?|funcionou|deu certo|resolvido|certinho)\b/i;
-const NEG_RE = /\b(n[aã]o (?:funcionou|resolveu|deu certo)|continua|ainda (?:n[aã]o|com)|de novo|persiste|errado|piorou|reincid|p[eé]ssim|ruim)\b/i;
+const VERY_POS_RE =
+  /\b(excelente|perfeito|fant[aá]stico|excepcional|incr[ií]vel|impressionante|maravilh\w+|sensacional|recomendo|superou (?:as )?expectativas?|adorei|melhor decis[aã]o|mudou .* rotina|retorno (?:foi )?imediato|valeu cada (?:investimento|centavo)|experi[eê]ncia .* excelente|muito satisfeit\w+)\b/i;
+const POS_RE =
+  /\b([oó]tim[oa]|bom|boa|f[aá]cil|r[aá]pido|eficiente|pr[aá]tico|intuitivo|confi[aá]vel|funcional|organizad\w+|[uú]til|[aá]gil|preciso|simples|produtiv\w+|funcionou|deu certo|resolvid\w+|certinho|obrigad[ao]|valeu|show|massa|topp?|legal|economizou tempo|facilitou|atendeu .* expectativas?|sem dificuldades?|reduziu erros|implanta[cç][aã]o .* tranquila|resultados? positiv\w+|melhorou .* opera[cç][aã]o|aumentou .* produtividade)\b/i;
+const NEUTRAL_RE =
+  /\b(regular|razo[aá]vel|aceit[aá]vel|median\w+|intermedi[aá]ri\w+|poderia ser melhor|tem potencial|precisa de ajustes?|atendeu parcialmente|espa[cç]o para evolu[cç][aã]o|nos adaptando|ainda .* aprendendo|faltam (?:algumas )?funcionalidades?|esperava (?:um )?(?:pouco )?mais)\b/i;
+const NEG_RE =
+  /\b(dif[ií]cil|complicad\w+|confus\w+|burocr[aá]tic\w+|complex\w+|trabalhos\w+|desorganizad\w+|pouco intuitivo|n[aã]o (?:é|e) intuitivo|muitas etapas|muitos cliques|navega[cç][aã]o .* confusa|curva de aprendizado|lent[oa]|demorad\w+|ineficiente|moros\w+|perco muito tempo|n[aã]o (?:economiza|agilizou)|mais lento|gera retrabalho|inst[aá]vel|falh\w+|travand\w+|problem[aá]tic\w+|defeituos\w+|inconsistente|n[aã]o (?:est[aá] )?funcionando|trava (?:frequentemente)?|muitos erros|desempenho .* ruim|cai frequentemente|dados n[aã]o atualizam|agendamento falha|indispon[ií]vel|erros inesperados|frustrante|estressante|cansativ\w+|desgastante|irritante|decepcionante|dor de cabe[cç]a|estou frustrad\w+|estou insatisfeit\w+|estou decepcionad\w+|prejudicando .* rotina|n[aã]o resolveu|p[eé]ssim|ruim|piorou|persiste|reincid)\b/i;
+const CHURN_RE =
+  /\b(voltar (?:para )?(?:o )?(?:sistema )?antigo|prefiro .* antigo|sistema antigo .* melhor|considerando cancelar|pensando em cancelar|procurar outra solu[cç][aã]o|n[aã]o valeu .* mudan[cç]a|arrependid\w+ (?:da )?(?:troca|contrata[cç][aã]o)|quero voltar|n[aã]o me adaptei|n[aã]o recomendo|avaliando trocar|trocar de fornecedor|se continuar assim .* cancelar|vamos cancelar|atrapalha mais do que ajuda|d[aá] mais trabalho do que ajuda|perdendo produtividade|equipe n[aã]o (?:gostou|quer usar)|ades[aã]o .* baixa|resist[eê]ncia [aà] mudan[cç]a|colaboradores preferem .* antigo)\b/i;
 
 function buildMetrics(a: Analysis): ReportMetrics {
   const totalSolicitacoes = a.demands.length;
@@ -384,15 +392,57 @@ function buildMetrics(a: Analysis): ReportMetrics {
     count: r.count,
   }));
 
-  let positivo = 0,
-    neutro = 0,
-    negativo = 0;
+  // Analisa TODAS as mensagens da clínica (não-suporte) na janela do parecer,
+  // além das devolutivas registradas em cada demanda. Cada mensagem classificada
+  // contribui uma única vez, com prioridade: churn > insatisfeito > muito satisfeito
+  // > satisfeito > neutro.
+  const wStart = a.closureVerdict?.windowStart?.getTime() ?? 0;
+  const wEnd = a.closureVerdict?.windowEnd?.getTime() ?? Date.now();
+  const samples: string[] = [];
+  for (const m of a.messages) {
+    if (m.isSystem || !m.author || m.hasMedia) continue;
+    const ts = m.date.getTime();
+    if (ts < wStart || ts > wEnd) continue;
+    if (isAmigoFlowSupport(m.author)) continue;
+    if (isGreetingOrNoise(m.content)) continue;
+    const t = m.content.trim();
+    if (t.length < 4) continue;
+    samples.push(t);
+  }
   for (const d of a.demands) {
-    if (!d.clientFollowUp) continue;
-    const t = d.clientFollowUp.toLowerCase();
-    if (NEG_RE.test(t)) negativo++;
-    else if (POS_RE.test(t)) positivo++;
-    else neutro++;
+    if (d.clientFollowUp) samples.push(d.clientFollowUp);
+  }
+
+  let muitoSatisfeito = 0;
+  let satisfeito = 0;
+  let neutro = 0;
+  let insatisfeito = 0;
+  let churnRisk = 0;
+  const churnQuotes: string[] = [];
+  for (const raw of samples) {
+    const t = raw.toLowerCase();
+    if (CHURN_RE.test(t)) {
+      churnRisk++;
+      insatisfeito++;
+      if (churnQuotes.length < 5) churnQuotes.push(sanitize(raw).slice(0, 220));
+      continue;
+    }
+    if (NEG_RE.test(t)) {
+      insatisfeito++;
+      continue;
+    }
+    if (VERY_POS_RE.test(t)) {
+      muitoSatisfeito++;
+      continue;
+    }
+    if (POS_RE.test(t)) {
+      satisfeito++;
+      continue;
+    }
+    if (NEUTRAL_RE.test(t)) {
+      neutro++;
+      continue;
+    }
   }
 
   return {
@@ -403,7 +453,8 @@ function buildMetrics(a: Analysis): ReportMetrics {
     pctResolucao,
     topRequesters,
     topResponders,
-    satisfacao: { positivo, neutro, negativo },
+    satisfacao: { muitoSatisfeito, satisfeito, neutro, insatisfeito, churnRisk },
+    churnQuotes,
   };
 }
 
