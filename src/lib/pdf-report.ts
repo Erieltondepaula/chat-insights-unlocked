@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import {
   AMIGO_FLOW_SUPPORT_TEAM,
   getAmigoFlowSupportName,
+  isAmigoFlowSupport,
   isGreetingOrNoise,
   type Analysis,
   type Demand,
