@@ -1330,7 +1330,7 @@ function renderDonut(
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
-  if (y + needed > pageH - 22) {
+  if (y + needed > pageH - 14) {
     doc.addPage();
     return margin;
   }
