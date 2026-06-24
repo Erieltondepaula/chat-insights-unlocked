@@ -1454,3 +1454,24 @@ function attachmentSummaryFromCounts(a: Analysis): string {
 }
 
 export const fixedSupportTeamForDisplay = AMIGO_FLOW_SUPPORT_TEAM;
+
+function buildSentimentNarrative(m: ReportMetrics): string {
+  const s = m.satisfacao;
+  const total = s.muitoSatisfeito + s.satisfeito + s.neutro + s.insatisfeito + s.churnRisk;
+  if (!total) {
+    return "Não foram identificadas, no período auditado, manifestações textuais suficientes para classificar o sentimento do cliente em relação ao Agente Flow. O acompanhamento da satisfação seguirá baseado nas próximas interações registradas no canal de implantação.";
+  }
+  const pct = (n: number) => `${((n / total) * 100).toFixed(0)}%`;
+  const partes: string[] = [];
+  if (s.muitoSatisfeito) partes.push(`${s.muitoSatisfeito} manifestação(ões) de alta satisfação (${pct(s.muitoSatisfeito)})`);
+  if (s.satisfeito) partes.push(`${s.satisfeito} de satisfação (${pct(s.satisfeito)})`);
+  if (s.neutro) partes.push(`${s.neutro} de tom neutro (${pct(s.neutro)})`);
+  if (s.insatisfeito) partes.push(`${s.insatisfeito} de insatisfação (${pct(s.insatisfeito)})`);
+  const churnTxt = s.churnRisk
+    ? ` Foram detectados ${s.churnRisk} sinal(is) explícito(s) de risco de churn, que demandam atenção comercial imediata.`
+    : " Não foram detectados sinais explícitos de risco de churn no período.";
+  const quotesTxt = m.churnQuotes.length
+    ? ` Trechos representativos: ${m.churnQuotes.slice(0, 3).map((q) => `"${q}"`).join(" | ")}.`
+    : "";
+  return `A análise de sentimento considerou todas as mensagens textuais enviadas pela clínica no período auditado. Foram identificadas ${partes.join(", ")}.${churnTxt}${quotesTxt}`;
+}
