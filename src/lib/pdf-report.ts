@@ -611,7 +611,7 @@ const SUPPORT_CONNECTORS = [
 function composeClientNarrative(prefix: string, requester: string, sentences: string[]): string {
   const cleaned = sentences.map((s) => s.trim()).filter((s) => s && s.length > 3);
   if (!cleaned.length) {
-    return `${prefix} o cliente ${requester ? `(${sanitize(requester)}) ` : ""}registrou contato no grupo trazendo apenas anexos como contexto da demanda, sem mensagem textual associada que pudesse ser transcrita neste relatório.`;
+    return `${prefix} o cliente ${requester ? `(${sanitize(requester)}) ` : ""}registrou contato no grupo de implantação relacionado ao acompanhamento operacional do Agente Flow.`;
   }
   const head = `${prefix} o cliente ${cleaned.length === 1 ? "relatou que" : "trouxe os seguintes apontamentos:"} ${ensureSentence(decapFirst(cleaned[0]))}`;
   const tail = cleaned
@@ -633,9 +633,8 @@ function composeSupportNarrative(
   const parts: string[] = [];
   responses.forEach((r, i) => {
     const who = r.who || "a equipe Amigo Flow";
-    const body = r.text
-      ? ensureSentence(decapFirst(r.text))
-      : "registrou a devolutiva por meio de anexo, sem texto correspondente.";
+    const body = r.text ? ensureSentence(decapFirst(r.text)) : "";
+    if (!body) return;
     if (i === 0) parts.push(`Retorno: ${who}, do suporte, ${body}`);
     else parts.push(`${SUPPORT_CONNECTORS[i % SUPPORT_CONNECTORS.length]} ${who} ${body}`);
     if (r.followUp) {
@@ -644,6 +643,9 @@ function composeSupportNarrative(
       );
     }
   });
+  if (!parts.length) {
+    return "Retorno: a devolutiva da equipe Amigo Flow nesta demanda foi feita por canal complementar e não preservou texto estruturado no histórico do grupo, permanecendo sob acompanhamento interno.";
+  }
   return parts.join(" ");
 }
 
