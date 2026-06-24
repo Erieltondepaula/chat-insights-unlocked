@@ -84,6 +84,7 @@ export type ReportDraft = {
   currentPendencies: string;
   attachmentNotes: string;
   metrics: ReportMetrics;
+  consolidatedSummary: string;
 };
 
 const SUPPORT_ORG = "Amigo Flow";
