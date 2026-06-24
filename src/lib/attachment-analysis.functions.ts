@@ -70,13 +70,10 @@ Retorne APENAS JSON válido: {"items":[{"name":"arquivo","type":"image|audio|doc
     }
   });
 
-function fallbackInsights(files: Array<z.infer<typeof fileSchema>>): AttachmentInsight[] {
-  return files.map((file) => ({
-    name: file.name,
-    type: file.kind,
-    summary:
-      "Anexo identificado e considerado como contexto da conversa; interpretação automática indisponível para este arquivo.",
-  }));
+function fallbackInsights(_files: Array<z.infer<typeof fileSchema>>): AttachmentInsight[] {
+  // Não emitir mensagens genéricas — se a IA não interpretou o arquivo,
+  // preferimos omitir do relatório a sujá-lo com "anexo identificado…".
+  return [];
 }
 
 function audioFormat(name: string, mime: string): string {
