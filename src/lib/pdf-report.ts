@@ -725,23 +725,30 @@ function buildOneBlock(
     demandSentences.push(t);
   }
 
-  // Attachment context (only if AI insights exist for these files)
-  const allFilenames = cleanedItems.flatMap((c) => [...c.filenames, ...c.resolutionFilenames]);
-  const allKinds = cleanedItems.flatMap((c) => c.kinds);
-  const attachLine = buildAttachmentContext(allFilenames, allKinds, insightMap);
-  if (attachLine) demandSentences.push(attachLine);
+  // Anexos do cliente (mensagem) interpretados pela IA — entram como frases reais
+  const clientFilenames = cleanedItems.flatMap((c) => c.filenames);
+  for (const s of attachmentInsightSentences(clientFilenames, insightMap)) {
+    const sig = s.slice(0, 80).toLowerCase();
+    if (seenDemand.has(sig)) continue;
+    seenDemand.add(sig);
+    demandSentences.push(s);
+  }
 
   const requester = items[0]?.requester ?? "";
   const dateLabel = buildDateLabel(date, isLast);
 
-  // Devolutivas (deduped, drop link-only)
+  // Devolutivas (deduped, drop link-only) — usa também insights dos anexos enviados pelo suporte
   const LINK_TXT = /\blink\b|https?:\/\/|\bwww\./i;
   const seenResp = new Set<string>();
   const responses: { who: string; text: string; followUp?: string; followUpAt?: Date }[] = [];
   for (const r of cleanedItems.filter((d) => d.status === "resolvido")) {
     const who = r.resolvedBy ?? "Equipe Amigo Flow";
-    const txt = r.cleanResolution;
+    let txt = r.cleanResolution;
     if (txt && LINK_TXT.test(txt)) continue;
+    if (!txt && r.resolutionFilenames.length) {
+      const ins = attachmentInsightSentences(r.resolutionFilenames, insightMap);
+      txt = ins.join(" ");
+    }
     const sig = `${who}|${(txt || "").slice(0, 80).toLowerCase()}`;
     if (seenResp.has(sig)) continue;
     seenResp.add(sig);
