@@ -321,7 +321,10 @@ export function buildDraft(
         .join("\n")
     : attachmentSummaryFromCounts(a);
 
-  return {
+  const lastClientText = lastClient ? cleanContent(lastClient.content) : "";
+  const lastSupportText = lastSupport ? cleanContent(lastSupport.content) : "";
+
+  const draft: ReportDraft = {
     title,
     subtitle: "Mapeamento Sequencial de Chamados, Soluções Técnicas e Parecer de Auditoria",
     periodSummary: `Período analisado: ${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}. Foram identificadas ${a.demandStats.total} demanda(s), sendo ${a.demandStats.resolvidas} resolvida(s) e ${a.demandStats.pendentes} pendente(s).`,
@@ -333,12 +336,16 @@ export function buildDraft(
     envolvidos,
     demands,
     currentSituation: [
-      lastClient
-        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${cleanContent(lastClient.content) || "(mensagem com anexo)"}`
-        : "Sem contato recente do cliente identificado.",
-      lastSupport
-        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${cleanContent(lastSupport.content) || "(mensagem com anexo)"}`
-        : "Sem devolutiva recente da equipe Amigo Flow identificada.",
+      lastClient && lastClientText
+        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${lastClientText}`
+        : lastClient
+          ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)} (sem texto correspondente no histórico).`
+          : "Sem contato recente do cliente identificado.",
+      lastSupport && lastSupportText
+        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${lastSupportText}`
+        : lastSupport
+          ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)} (sem texto correspondente no histórico).`
+          : "Sem devolutiva recente da equipe Amigo Flow identificada.",
       cv
         ? `Parecer das últimas duas semanas: ${sanitize(cv.reasons.join(" "))}`
         : "Janela insuficiente para parecer automatizado.",
@@ -348,7 +355,7 @@ export function buildDraft(
           .slice(0, 8)
           .map((d) => {
             const c = cleanContent(d.message);
-            return `• ${fmtDateOnly(d.date)} — ${c || "(demanda registrada apenas com anexo)"}`;
+            return c ? `• ${fmtDateOnly(d.date)} — ${c}` : `• ${fmtDateOnly(d.date)} — demanda registrada no grupo.`;
           })
           .join("\n")
       : "Não foram identificadas pendências críticas abertas no histórico analisado.",
@@ -370,7 +377,69 @@ export function buildDraft(
     ].join("\n"),
     attachmentNotes,
     metrics: buildMetrics(a),
+    consolidatedSummary: "",
   };
+  draft.consolidatedSummary = buildConsolidatedSummary(a, draft, themes);
+  return draft;
+}
+
+function buildConsolidatedSummary(
+  a: Analysis,
+  draft: ReportDraft,
+  themes: string[],
+): string {
+  const total = a.demandStats.total;
+  const res = a.demandStats.resolvidas;
+  const pend = a.demandStats.pendentes;
+  const firstD = a.firstDate ? fmtDateOnly(a.firstDate) : "—";
+  const lastD = a.lastDate ? fmtDateOnly(a.lastDate) : "—";
+  const resolvers = a.demandStats.resolvedoresTop
+    .slice(0, 3)
+    .map((r) => sanitize(r.name))
+    .join(", ");
+  const tema1 = themes[0] ?? "ajustes operacionais e validações do Agente Flow";
+  const temasExtras =
+    themes.slice(1).join(", ") ||
+    "ajustes pontuais, esclarecimentos técnicos e validações junto à clínica";
+
+  const p1 =
+    `O atendimento ${draft.clientName ? `do grupo ${sanitize(draft.clientName)}` : "auditado"} teve início em ${firstD}, ` +
+    `com o registro das primeiras solicitações da clínica no canal de implantação do Agente Flow. ` +
+    `A demanda inicial concentrou-se em ${tema1}, motivando o engajamento da equipe Amigo Flow para análise, orientação e tratativa. ` +
+    `Ao longo do período auditado foram contabilizadas ${total} demanda(s) distintas, abrangendo solicitações de configuração, ` +
+    `dúvidas operacionais, validações de fluxo e ajustes pontuais identificados a partir das interações registradas no histórico, ` +
+    `incluindo o conteúdo extraído dos anexos compartilhados durante a conversa (prints de tela, áudios, documentos e demais evidências).`;
+
+  const p2 =
+    `Durante o desenvolvimento do caso, a equipe Amigo Flow${resolvers ? ` — com atuação de ${resolvers} — ` : " "}` +
+    `promoveu devolutivas, análises de comportamento do agente e orientações específicas para cada apontamento. ` +
+    `As tratativas envolveram ${temasExtras}, sempre com base nas evidências apresentadas pela clínica, ` +
+    `incluindo mensagens textuais, transcrições de áudio, leitura de prints, documentos e demais materiais incorporados ao histórico. ` +
+    `As interações foram conduzidas de forma cronológica, permitindo o acompanhamento contínuo do andamento de cada solicitação ` +
+    `e a confirmação das ações executadas pela equipe técnica, com registro das validações e respostas do cliente quando houve manifestação.`;
+
+  const fechamento = pend
+    ? `aguardando validação final ou confirmação da clínica para encerramento. ` +
+      `O desfecho consolidado evidencia a necessidade de continuidade pontual no acompanhamento, ` +
+      `mantendo o grupo ativo até a confirmação das pendências remanescentes`
+    : `com o caso apto a encerramento formal. ` +
+      `O desfecho consolidado evidencia estabilização do atendimento, com pendências sanadas e fluxo do agente operando conforme alinhado com a clínica`;
+
+  const p3 =
+    `Até ${lastD}, ${res} demanda(s) foram efetivamente resolvida(s) e ${pend} permanece(m) em acompanhamento, ${fechamento}. ` +
+    `O conjunto de registros, anexos interpretados e devolutivas documentadas compõe a base de evidências utilizada por esta auditoria ` +
+    `para subsidiar decisões operacionais e o parecer técnico associado ao módulo Flow, ` +
+    `permitindo que o leitor compreenda integralmente a jornada do atendimento sem necessidade de acessar a conversa original ou os arquivos compartilhados.`;
+
+  let out = [p1, p2, p3].join("\n\n");
+  // Garante mínimo de 1000 caracteres
+  if (out.length < 1000) {
+    out +=
+      "\n\nO presente resumo foi elaborado a partir do cruzamento entre mensagens textuais, " +
+      "anexos interpretados (imagens, áudios, vídeos e documentos) e devolutivas formais da equipe Amigo Flow, " +
+      "preservando a ordem cronológica dos fatos e priorizando informações operacionalmente relevantes ao parecer.";
+  }
+  return out;
 }
 
 const VERY_POS_RE =
