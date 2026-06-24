@@ -1443,14 +1443,10 @@ function inferThemes(a: Analysis): string[] {
   return themes.filter(([re]) => re.test(corpus)).map(([, label]) => label);
 }
 
-function attachmentSummaryFromCounts(a: Analysis): string {
-  const parts = [
-    a.mediaCount.image ? `${a.mediaCount.image} imagem(ns)` : "",
-    a.mediaCount.audio ? `${a.mediaCount.audio} áudio(s)` : "",
-    a.mediaCount.document ? `${a.mediaCount.document} documento(s)/PDF(s)` : "",
-    a.mediaCount.video ? `${a.mediaCount.video} vídeo(s)` : "",
-  ].filter(Boolean);
-  return parts.length ? `Foram identificados anexos no histórico: ${parts.join(", ")}.` : "";
+function attachmentSummaryFromCounts(_a: Analysis): string {
+  // Sem insights interpretados, preferimos não inserir contagens genéricas
+  // do tipo "X imagens, Y áudios" no relatório final.
+  return "";
 }
 
 export const fixedSupportTeamForDisplay = AMIGO_FLOW_SUPPORT_TEAM;
