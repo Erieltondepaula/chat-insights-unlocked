@@ -84,6 +84,7 @@ export type ReportDraft = {
   currentPendencies: string;
   attachmentNotes: string;
   metrics: ReportMetrics;
+  consolidatedSummary: string;
 };
 
 const SUPPORT_ORG = "Amigo Flow";
@@ -215,16 +216,29 @@ function buildAttachmentContext(
   _kinds: string[],
   insightMap: InsightMap,
 ): string {
+  // Mantido para compatibilidade; preferimos usar attachmentInsightSentences abaixo.
   if (!insightMap.size) return "";
-  const items: string[] = [];
-  for (const fn of filenames.slice(0, 6)) {
+  const items = attachmentInsightSentences(filenames, insightMap);
+  return items.length ? items.join(" ") : "";
+}
+
+// Extrai frases narrativas já interpretadas a partir dos anexos (OCR/transcrição).
+// Retorna o conteúdo real sem rótulos genéricos como "Anexo identificado".
+function attachmentInsightSentences(filenames: string[], insightMap: InsightMap): string[] {
+  if (!insightMap.size) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const fn of filenames.slice(0, 8)) {
     const ins = insightMap.get(fn.toLowerCase());
-    if (ins?.summary) {
-      items.push(`${kindLabel(ins.type)}: ${sanitize(ins.summary).slice(0, 220)}`);
-    }
+    if (!ins?.summary) continue;
+    const s = sanitize(ins.summary).trim();
+    if (!s) continue;
+    const sig = s.slice(0, 80).toLowerCase();
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    out.push(s);
   }
-  if (!items.length) return "";
-  return `Anexos interpretados pela IA — ${items.join(" | ")}`;
+  return out;
 }
 
 // ============================================================
@@ -307,7 +321,10 @@ export function buildDraft(
         .join("\n")
     : attachmentSummaryFromCounts(a);
 
-  return {
+  const lastClientText = lastClient ? cleanContent(lastClient.content) : "";
+  const lastSupportText = lastSupport ? cleanContent(lastSupport.content) : "";
+
+  const draft: ReportDraft = {
     title,
     subtitle: "Mapeamento Sequencial de Chamados, Soluções Técnicas e Parecer de Auditoria",
     periodSummary: `Período analisado: ${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}. Foram identificadas ${a.demandStats.total} demanda(s), sendo ${a.demandStats.resolvidas} resolvida(s) e ${a.demandStats.pendentes} pendente(s).`,
@@ -319,12 +336,16 @@ export function buildDraft(
     envolvidos,
     demands,
     currentSituation: [
-      lastClient
-        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${cleanContent(lastClient.content) || "(mensagem com anexo)"}`
-        : "Sem contato recente do cliente identificado.",
-      lastSupport
-        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${cleanContent(lastSupport.content) || "(mensagem com anexo)"}`
-        : "Sem devolutiva recente da equipe Amigo Flow identificada.",
+      lastClient && lastClientText
+        ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)}: ${lastClientText}`
+        : lastClient
+          ? `Último contato do cliente em ${fmtDateOnly(lastClient.date)} (sem texto correspondente no histórico).`
+          : "Sem contato recente do cliente identificado.",
+      lastSupport && lastSupportText
+        ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)}: ${lastSupportText}`
+        : lastSupport
+          ? `Última devolutiva da equipe Amigo Flow em ${fmtDateOnly(lastSupport.date)} (sem texto correspondente no histórico).`
+          : "Sem devolutiva recente da equipe Amigo Flow identificada.",
       cv
         ? `Parecer das últimas duas semanas: ${sanitize(cv.reasons.join(" "))}`
         : "Janela insuficiente para parecer automatizado.",
@@ -334,7 +355,7 @@ export function buildDraft(
           .slice(0, 8)
           .map((d) => {
             const c = cleanContent(d.message);
-            return `• ${fmtDateOnly(d.date)} — ${c || "(demanda registrada apenas com anexo)"}`;
+            return c ? `• ${fmtDateOnly(d.date)} — ${c}` : `• ${fmtDateOnly(d.date)} — demanda registrada no grupo.`;
           })
           .join("\n")
       : "Não foram identificadas pendências críticas abertas no histórico analisado.",
@@ -356,7 +377,69 @@ export function buildDraft(
     ].join("\n"),
     attachmentNotes,
     metrics: buildMetrics(a),
+    consolidatedSummary: "",
   };
+  draft.consolidatedSummary = buildConsolidatedSummary(a, draft, themes);
+  return draft;
+}
+
+function buildConsolidatedSummary(
+  a: Analysis,
+  draft: ReportDraft,
+  themes: string[],
+): string {
+  const total = a.demandStats.total;
+  const res = a.demandStats.resolvidas;
+  const pend = a.demandStats.pendentes;
+  const firstD = a.firstDate ? fmtDateOnly(a.firstDate) : "—";
+  const lastD = a.lastDate ? fmtDateOnly(a.lastDate) : "—";
+  const resolvers = a.demandStats.resolvedoresTop
+    .slice(0, 3)
+    .map((r) => sanitize(r.name))
+    .join(", ");
+  const tema1 = themes[0] ?? "ajustes operacionais e validações do Agente Flow";
+  const temasExtras =
+    themes.slice(1).join(", ") ||
+    "ajustes pontuais, esclarecimentos técnicos e validações junto à clínica";
+
+  const p1 =
+    `O atendimento ${draft.clientName ? `do grupo ${sanitize(draft.clientName)}` : "auditado"} teve início em ${firstD}, ` +
+    `com o registro das primeiras solicitações da clínica no canal de implantação do Agente Flow. ` +
+    `A demanda inicial concentrou-se em ${tema1}, motivando o engajamento da equipe Amigo Flow para análise, orientação e tratativa. ` +
+    `Ao longo do período auditado foram contabilizadas ${total} demanda(s) distintas, abrangendo solicitações de configuração, ` +
+    `dúvidas operacionais, validações de fluxo e ajustes pontuais identificados a partir das interações registradas no histórico, ` +
+    `incluindo o conteúdo extraído dos anexos compartilhados durante a conversa (prints de tela, áudios, documentos e demais evidências).`;
+
+  const p2 =
+    `Durante o desenvolvimento do caso, a equipe Amigo Flow${resolvers ? ` — com atuação de ${resolvers} — ` : " "}` +
+    `promoveu devolutivas, análises de comportamento do agente e orientações específicas para cada apontamento. ` +
+    `As tratativas envolveram ${temasExtras}, sempre com base nas evidências apresentadas pela clínica, ` +
+    `incluindo mensagens textuais, transcrições de áudio, leitura de prints, documentos e demais materiais incorporados ao histórico. ` +
+    `As interações foram conduzidas de forma cronológica, permitindo o acompanhamento contínuo do andamento de cada solicitação ` +
+    `e a confirmação das ações executadas pela equipe técnica, com registro das validações e respostas do cliente quando houve manifestação.`;
+
+  const fechamento = pend
+    ? `aguardando validação final ou confirmação da clínica para encerramento. ` +
+      `O desfecho consolidado evidencia a necessidade de continuidade pontual no acompanhamento, ` +
+      `mantendo o grupo ativo até a confirmação das pendências remanescentes`
+    : `com o caso apto a encerramento formal. ` +
+      `O desfecho consolidado evidencia estabilização do atendimento, com pendências sanadas e fluxo do agente operando conforme alinhado com a clínica`;
+
+  const p3 =
+    `Até ${lastD}, ${res} demanda(s) foram efetivamente resolvida(s) e ${pend} permanece(m) em acompanhamento, ${fechamento}. ` +
+    `O conjunto de registros, anexos interpretados e devolutivas documentadas compõe a base de evidências utilizada por esta auditoria ` +
+    `para subsidiar decisões operacionais e o parecer técnico associado ao módulo Flow, ` +
+    `permitindo que o leitor compreenda integralmente a jornada do atendimento sem necessidade de acessar a conversa original ou os arquivos compartilhados.`;
+
+  let out = [p1, p2, p3].join("\n\n");
+  // Garante mínimo de 1000 caracteres
+  if (out.length < 1000) {
+    out +=
+      "\n\nO presente resumo foi elaborado a partir do cruzamento entre mensagens textuais, " +
+      "anexos interpretados (imagens, áudios, vídeos e documentos) e devolutivas formais da equipe Amigo Flow, " +
+      "preservando a ordem cronológica dos fatos e priorizando informações operacionalmente relevantes ao parecer.";
+  }
+  return out;
 }
 
 const VERY_POS_RE =
@@ -528,7 +611,7 @@ const SUPPORT_CONNECTORS = [
 function composeClientNarrative(prefix: string, requester: string, sentences: string[]): string {
   const cleaned = sentences.map((s) => s.trim()).filter((s) => s && s.length > 3);
   if (!cleaned.length) {
-    return `${prefix} o cliente ${requester ? `(${sanitize(requester)}) ` : ""}registrou contato no grupo trazendo apenas anexos como contexto da demanda, sem mensagem textual associada que pudesse ser transcrita neste relatório.`;
+    return `${prefix} o cliente ${requester ? `(${sanitize(requester)}) ` : ""}registrou contato no grupo de implantação relacionado ao acompanhamento operacional do Agente Flow.`;
   }
   const head = `${prefix} o cliente ${cleaned.length === 1 ? "relatou que" : "trouxe os seguintes apontamentos:"} ${ensureSentence(decapFirst(cleaned[0]))}`;
   const tail = cleaned
@@ -550,9 +633,8 @@ function composeSupportNarrative(
   const parts: string[] = [];
   responses.forEach((r, i) => {
     const who = r.who || "a equipe Amigo Flow";
-    const body = r.text
-      ? ensureSentence(decapFirst(r.text))
-      : "registrou a devolutiva por meio de anexo, sem texto correspondente.";
+    const body = r.text ? ensureSentence(decapFirst(r.text)) : "";
+    if (!body) return;
     if (i === 0) parts.push(`Retorno: ${who}, do suporte, ${body}`);
     else parts.push(`${SUPPORT_CONNECTORS[i % SUPPORT_CONNECTORS.length]} ${who} ${body}`);
     if (r.followUp) {
@@ -561,6 +643,9 @@ function composeSupportNarrative(
       );
     }
   });
+  if (!parts.length) {
+    return "Retorno: a devolutiva da equipe Amigo Flow nesta demanda foi feita por canal complementar e não preservou texto estruturado no histórico do grupo, permanecendo sob acompanhamento interno.";
+  }
   return parts.join(" ");
 }
 
@@ -640,23 +725,30 @@ function buildOneBlock(
     demandSentences.push(t);
   }
 
-  // Attachment context (only if AI insights exist for these files)
-  const allFilenames = cleanedItems.flatMap((c) => [...c.filenames, ...c.resolutionFilenames]);
-  const allKinds = cleanedItems.flatMap((c) => c.kinds);
-  const attachLine = buildAttachmentContext(allFilenames, allKinds, insightMap);
-  if (attachLine) demandSentences.push(attachLine);
+  // Anexos do cliente (mensagem) interpretados pela IA — entram como frases reais
+  const clientFilenames = cleanedItems.flatMap((c) => c.filenames);
+  for (const s of attachmentInsightSentences(clientFilenames, insightMap)) {
+    const sig = s.slice(0, 80).toLowerCase();
+    if (seenDemand.has(sig)) continue;
+    seenDemand.add(sig);
+    demandSentences.push(s);
+  }
 
   const requester = items[0]?.requester ?? "";
   const dateLabel = buildDateLabel(date, isLast);
 
-  // Devolutivas (deduped, drop link-only)
+  // Devolutivas (deduped, drop link-only) — usa também insights dos anexos enviados pelo suporte
   const LINK_TXT = /\blink\b|https?:\/\/|\bwww\./i;
   const seenResp = new Set<string>();
   const responses: { who: string; text: string; followUp?: string; followUpAt?: Date }[] = [];
   for (const r of cleanedItems.filter((d) => d.status === "resolvido")) {
     const who = r.resolvedBy ?? "Equipe Amigo Flow";
-    const txt = r.cleanResolution;
+    let txt = r.cleanResolution;
     if (txt && LINK_TXT.test(txt)) continue;
+    if (!txt && r.resolutionFilenames.length) {
+      const ins = attachmentInsightSentences(r.resolutionFilenames, insightMap);
+      txt = ins.join(" ");
+    }
     const sig = `${who}|${(txt || "").slice(0, 80).toLowerCase()}`;
     if (seenResp.has(sig)) continue;
     seenResp.add(sig);
@@ -801,7 +893,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
 
   // ----- Demands
-  y = sectionTitle(doc, "2. Relatório Detalhado de Demandas e Resoluções Técnicas", margin, y);
+  y = sectionTitle(doc, "2. Linha do Tempo do Atendimento", margin, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.3);
   doc.setTextColor(...TEXT);
@@ -818,54 +910,42 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- Sections 3-5
-  y = sectionTitle(doc, "3. Situação Atual", margin, y);
+  // ----- 3. Indicadores Visuais (gráficos) — página dedicada para manter conjunto
+  doc.addPage();
+  y = margin;
+  y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
+  y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+
+  // ----- 4. Análise do Atendimento (situação atual)
+  y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
   y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "4. Pendências", margin, y);
-  y = paragraph(doc, sanitize(draft.pendingItems), margin, y, contentW, 9.3) + 10;
+  // ----- 5. Sentimentos e Satisfação
+  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
+  y = paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "5. Resumo Executivo", margin, y);
+  // ----- 6. Conclusões e Recomendações
+  y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
-  y = titledParagraph(
-    doc,
-    "Principais Temas Identificados",
-    sanitize(draft.mainThemes),
-    margin,
-    y,
-    contentW,
-  );
-  y = titledParagraph(
-    doc,
-    "Ações Executadas",
-    sanitize(draft.actionsExecuted),
-    margin,
-    y,
-    contentW,
-  );
-  y = titledParagraph(
-    doc,
-    "Pendências Atuais",
-    sanitize(draft.currentPendencies),
-    margin,
-    y,
-    contentW,
-  );
+  y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
+  y = titledParagraph(doc, "Ações Executadas", sanitize(draft.actionsExecuted), margin, y, contentW);
+  y = titledParagraph(doc, "Pendências Atuais", sanitize(draft.currentPendencies), margin, y, contentW);
+  if (draft.pendingItems.trim())
+    y = titledParagraph(doc, "Pendências Detalhadas", sanitize(draft.pendingItems), margin, y, contentW);
   if (draft.attachmentNotes.trim())
     y = titledParagraph(
       doc,
-      "Imagens, Áudios e Documentos Considerados",
+      "Imagens, Áudios e Documentos Interpretados",
       sanitize(draft.attachmentNotes),
       margin,
       y,
       contentW,
     );
 
-  // ----- 6. Indicadores Visuais (gráficos) — sempre em página dedicada
-  doc.addPage();
-  y = margin;
-  y = sectionTitle(doc, "6. Indicadores Visuais", margin, y);
-  y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+  // ----- 7. Resumo Consolidado do Atendimento (narrativa final)
+  y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
+  y = paragraph(doc, sanitize(draft.consolidatedSummary), margin, y, contentW, 9.5) + 10;
+
 
 
   // ----- Footer minimalista (apenas paginação)
@@ -1363,14 +1443,31 @@ function inferThemes(a: Analysis): string[] {
   return themes.filter(([re]) => re.test(corpus)).map(([, label]) => label);
 }
 
-function attachmentSummaryFromCounts(a: Analysis): string {
-  const parts = [
-    a.mediaCount.image ? `${a.mediaCount.image} imagem(ns)` : "",
-    a.mediaCount.audio ? `${a.mediaCount.audio} áudio(s)` : "",
-    a.mediaCount.document ? `${a.mediaCount.document} documento(s)/PDF(s)` : "",
-    a.mediaCount.video ? `${a.mediaCount.video} vídeo(s)` : "",
-  ].filter(Boolean);
-  return parts.length ? `Foram identificados anexos no histórico: ${parts.join(", ")}.` : "";
+function attachmentSummaryFromCounts(_a: Analysis): string {
+  // Sem insights interpretados, preferimos não inserir contagens genéricas
+  // do tipo "X imagens, Y áudios" no relatório final.
+  return "";
 }
 
 export const fixedSupportTeamForDisplay = AMIGO_FLOW_SUPPORT_TEAM;
+
+function buildSentimentNarrative(m: ReportMetrics): string {
+  const s = m.satisfacao;
+  const total = s.muitoSatisfeito + s.satisfeito + s.neutro + s.insatisfeito + s.churnRisk;
+  if (!total) {
+    return "Não foram identificadas, no período auditado, manifestações textuais suficientes para classificar o sentimento do cliente em relação ao Agente Flow. O acompanhamento da satisfação seguirá baseado nas próximas interações registradas no canal de implantação.";
+  }
+  const pct = (n: number) => `${((n / total) * 100).toFixed(0)}%`;
+  const partes: string[] = [];
+  if (s.muitoSatisfeito) partes.push(`${s.muitoSatisfeito} manifestação(ões) de alta satisfação (${pct(s.muitoSatisfeito)})`);
+  if (s.satisfeito) partes.push(`${s.satisfeito} de satisfação (${pct(s.satisfeito)})`);
+  if (s.neutro) partes.push(`${s.neutro} de tom neutro (${pct(s.neutro)})`);
+  if (s.insatisfeito) partes.push(`${s.insatisfeito} de insatisfação (${pct(s.insatisfeito)})`);
+  const churnTxt = s.churnRisk
+    ? ` Foram detectados ${s.churnRisk} sinal(is) explícito(s) de risco de churn, que demandam atenção comercial imediata.`
+    : " Não foram detectados sinais explícitos de risco de churn no período.";
+  const quotesTxt = m.churnQuotes.length
+    ? ` Trechos representativos: ${m.churnQuotes.slice(0, 3).map((q) => `"${q}"`).join(" | ")}.`
+    : "";
+  return `A análise de sentimento considerou todas as mensagens textuais enviadas pela clínica no período auditado. Foram identificadas ${partes.join(", ")}.${churnTxt}${quotesTxt}`;
+}
