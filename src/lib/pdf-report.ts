@@ -216,16 +216,29 @@ function buildAttachmentContext(
   _kinds: string[],
   insightMap: InsightMap,
 ): string {
+  // Mantido para compatibilidade; preferimos usar attachmentInsightSentences abaixo.
   if (!insightMap.size) return "";
-  const items: string[] = [];
-  for (const fn of filenames.slice(0, 6)) {
+  const items = attachmentInsightSentences(filenames, insightMap);
+  return items.length ? items.join(" ") : "";
+}
+
+// Extrai frases narrativas já interpretadas a partir dos anexos (OCR/transcrição).
+// Retorna o conteúdo real sem rótulos genéricos como "Anexo identificado".
+function attachmentInsightSentences(filenames: string[], insightMap: InsightMap): string[] {
+  if (!insightMap.size) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const fn of filenames.slice(0, 8)) {
     const ins = insightMap.get(fn.toLowerCase());
-    if (ins?.summary) {
-      items.push(`${kindLabel(ins.type)}: ${sanitize(ins.summary).slice(0, 220)}`);
-    }
+    if (!ins?.summary) continue;
+    const s = sanitize(ins.summary).trim();
+    if (!s) continue;
+    const sig = s.slice(0, 80).toLowerCase();
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    out.push(s);
   }
-  if (!items.length) return "";
-  return `Anexos interpretados pela IA — ${items.join(" | ")}`;
+  return out;
 }
 
 // ============================================================
