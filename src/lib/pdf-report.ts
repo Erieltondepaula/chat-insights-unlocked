@@ -893,7 +893,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
 
   // ----- Demands
-  y = sectionTitle(doc, "2. Relatório Detalhado de Demandas e Resoluções Técnicas", margin, y);
+  y = sectionTitle(doc, "2. Linha do Tempo do Atendimento", margin, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.3);
   doc.setTextColor(...TEXT);
@@ -910,54 +910,42 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- Sections 3-5
-  y = sectionTitle(doc, "3. Situação Atual", margin, y);
+  // ----- 3. Indicadores Visuais (gráficos) — página dedicada para manter conjunto
+  doc.addPage();
+  y = margin;
+  y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
+  y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+
+  // ----- 4. Análise do Atendimento (situação atual)
+  y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
   y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "4. Pendências", margin, y);
-  y = paragraph(doc, sanitize(draft.pendingItems), margin, y, contentW, 9.3) + 10;
+  // ----- 5. Sentimentos e Satisfação
+  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
+  y = paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), margin, y, contentW, 9.3) + 10;
 
-  y = sectionTitle(doc, "5. Resumo Executivo", margin, y);
+  // ----- 6. Conclusões e Recomendações
+  y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
-  y = titledParagraph(
-    doc,
-    "Principais Temas Identificados",
-    sanitize(draft.mainThemes),
-    margin,
-    y,
-    contentW,
-  );
-  y = titledParagraph(
-    doc,
-    "Ações Executadas",
-    sanitize(draft.actionsExecuted),
-    margin,
-    y,
-    contentW,
-  );
-  y = titledParagraph(
-    doc,
-    "Pendências Atuais",
-    sanitize(draft.currentPendencies),
-    margin,
-    y,
-    contentW,
-  );
+  y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
+  y = titledParagraph(doc, "Ações Executadas", sanitize(draft.actionsExecuted), margin, y, contentW);
+  y = titledParagraph(doc, "Pendências Atuais", sanitize(draft.currentPendencies), margin, y, contentW);
+  if (draft.pendingItems.trim())
+    y = titledParagraph(doc, "Pendências Detalhadas", sanitize(draft.pendingItems), margin, y, contentW);
   if (draft.attachmentNotes.trim())
     y = titledParagraph(
       doc,
-      "Imagens, Áudios e Documentos Considerados",
+      "Imagens, Áudios e Documentos Interpretados",
       sanitize(draft.attachmentNotes),
       margin,
       y,
       contentW,
     );
 
-  // ----- 6. Indicadores Visuais (gráficos) — sempre em página dedicada
-  doc.addPage();
-  y = margin;
-  y = sectionTitle(doc, "6. Indicadores Visuais", margin, y);
-  y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+  // ----- 7. Resumo Consolidado do Atendimento (narrativa final)
+  y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
+  y = paragraph(doc, sanitize(draft.consolidatedSummary), margin, y, contentW, 9.5) + 10;
+
 
 
   // ----- Footer minimalista (apenas paginação)
