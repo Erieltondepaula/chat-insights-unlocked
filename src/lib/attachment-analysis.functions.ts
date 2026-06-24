@@ -18,10 +18,17 @@ export const analyzeAttachments = createServerFn({ method: "POST" })
     const content: Array<Record<string, unknown>> = [
       {
         type: "text",
-        text: `Analise anexos de uma conversa de atendimento WhatsApp para auditoria operacional.
-Retorne APENAS JSON válido com a chave "items".
-Cada item: {"name":"arquivo","type":"image|audio|document|other","summary":"síntese objetiva do contexto","demands":["demandas do cliente"],"actions":["ações/devolutivas de suporte"],"pending":["pendências"]}.
-Não invente dados. Se não houver texto audível/legível, descreva a limitação.`,
+        text: `Você é o analista de auditoria do Agente Flow. Interprete cada anexo de uma conversa de atendimento WhatsApp e produza conteúdo que substitua o anexo no relatório final — o leitor NÃO terá acesso ao arquivo.
+
+Regras obrigatórias:
+- IMAGENS: faça OCR e transcreva integralmente TODO o texto legível (telas de sistema, prints, comprovantes, mensagens, formulários). Descreva também elementos visuais relevantes (qual tela, qual fluxo, qual erro, qual paciente/horário visível). Relacione o conteúdo ao contexto do atendimento.
+- ÁUDIOS: transcreva integralmente a fala, identificando decisões, solicitações, confirmações, reagendamentos e resoluções mencionadas.
+- VÍDEOS: transcreva as falas e descreva o que é exibido na tela (fluxo demonstrado, telas percorridas, erros visíveis).
+- PDFs/DOCUMENTOS: extraia o texto principal e resuma os pontos relevantes (datas, valores, decisões, orientações).
+
+NÃO use frases genéricas como "anexo identificado", "imagem enviada pela clínica", "interpretação indisponível", "arquivo anexado". Se realmente não houver conteúdo legível, descreva objetivamente o que se vê (ex.: "imagem desfocada da tela inicial do sistema, sem texto legível").
+
+Retorne APENAS JSON válido: {"items":[{"name":"arquivo","type":"image|audio|document|other","summary":"síntese narrativa rica incluindo OCR/transcrição completa quando houver","demands":["demandas do cliente extraídas"],"actions":["ações/devolutivas extraídas"],"pending":["pendências extraídas"]}]}.`,
       },
     ];
 
