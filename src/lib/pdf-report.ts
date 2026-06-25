@@ -923,9 +923,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- 3. Indicadores Visuais (gráficos) — página dedicada para manter conjunto
-  doc.addPage();
-  y = margin;
+  // ----- 3. Indicadores Visuais (gráficos) — fluxo natural; só quebra se não couber
+  y = ensureSpace(doc, y, 360, margin);
   y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
 
@@ -937,23 +936,10 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
   y = paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), margin, y, contentW, 9.3) + 10;
 
-  // ----- 6. Conclusões e Recomendações
+  // ----- 6. Conclusões e Recomendações (somente síntese + temas — sem repetir ações/pendências)
   y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
   y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
-  y = titledParagraph(doc, "Ações Executadas", sanitize(draft.actionsExecuted), margin, y, contentW);
-  y = titledParagraph(doc, "Pendências Atuais", sanitize(draft.currentPendencies), margin, y, contentW);
-  if (draft.pendingItems.trim())
-    y = titledParagraph(doc, "Pendências Detalhadas", sanitize(draft.pendingItems), margin, y, contentW);
-  if (draft.attachmentNotes.trim())
-    y = titledParagraph(
-      doc,
-      "Imagens, Áudios e Documentos Interpretados",
-      sanitize(draft.attachmentNotes),
-      margin,
-      y,
-      contentW,
-    );
 
   // ----- 7. Resumo Consolidado do Atendimento (narrativa final)
   y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
