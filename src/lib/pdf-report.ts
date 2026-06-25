@@ -383,6 +383,24 @@ export function buildDraft(
   return draft;
 }
 
+function detectClientGenderSuffix(name: string): "o" | "a" {
+  const w = (name || "").trim().split(/\s+/).pop()?.toLowerCase() || "";
+  // Heurística PT-BR: termos femininos comuns ou terminação em "a"
+  if (/^(clinica|clínica|dra|dra\.|sra|sra\.|recep[cç][aã]o)$/.test(w)) return "a";
+  if (/a$/.test(w)) return "a";
+  return "o";
+}
+
+function pickFirstClientQuote(a: Analysis): string {
+  for (const m of a.messages ?? []) {
+    if (m.isSystem) continue;
+    if (getAmigoFlowSupportName(m.author)) continue;
+    const t = stripMediaTokens(m.content).text.trim();
+    if (t && t.length > 12 && t.length < 180) return t;
+  }
+  return "";
+}
+
 function buildConsolidatedSummary(
   a: Analysis,
   draft: ReportDraft,
@@ -402,44 +420,72 @@ function buildConsolidatedSummary(
     themes.slice(1).join(", ") ||
     "ajustes pontuais, esclarecimentos técnicos e validações junto à clínica";
 
+  const suf = detectClientGenderSuffix(draft.clientName);
+  // artigos concordantes
+  const o = suf === "a" ? "a" : "o";
+  const O = suf === "a" ? "A" : "O";
+  const clienteRef = `${o} client${suf}`; // "o cliente" / "a cliente"
+  const contratante = suf === "a" ? "contratante" : "contratante";
+  const firstQuote = pickFirstClientQuote(a);
+
   const p1 =
-    `O atendimento ${draft.clientName ? `do grupo ${sanitize(draft.clientName)}` : "auditado"} teve início em ${firstD}, ` +
-    `com o registro das primeiras solicitações da clínica no canal de implantação do Agente Flow. ` +
-    `A demanda inicial concentrou-se em ${tema1}, motivando o engajamento da equipe Amigo Flow para análise, orientação e tratativa. ` +
+    `${O} atendimento ${draft.clientName ? `do grupo ${sanitize(draft.clientName)}` : "auditado"} teve início em ${firstD}, ` +
+    `com o registro das primeiras solicitações d${o} ${contratante} no canal de implantação do Agente Flow. ` +
+    `${O} client${suf} apresentou demanda inicial concentrada em ${tema1}, motivando o engajamento da equipe Amigo Flow ` +
+    `para análise, orientação e tratativa (tratativa conduzida de forma cronológica e documentada no histórico). ` +
     `Ao longo do período auditado foram contabilizadas ${total} demanda(s) distintas, abrangendo solicitações de configuração, ` +
-    `dúvidas operacionais, validações de fluxo e ajustes pontuais identificados a partir das interações registradas no histórico, ` +
-    `incluindo o conteúdo extraído dos anexos compartilhados durante a conversa (prints de tela, áudios, documentos e demais evidências).`;
+    `dúvidas operacionais, validações de fluxo e ajustes pontuais identificados a partir das interações registradas, ` +
+    `incluindo o conteúdo extraído dos anexos compartilhados (prints de tela, áudios, documentos e demais evidências).`;
 
   const p2 =
     `Durante o desenvolvimento do caso, a equipe Amigo Flow${resolvers ? ` — com atuação de ${resolvers} — ` : " "}` +
-    `promoveu devolutivas, análises de comportamento do agente e orientações específicas para cada apontamento. ` +
-    `As tratativas envolveram ${temasExtras}, sempre com base nas evidências apresentadas pela clínica, ` +
-    `incluindo mensagens textuais, transcrições de áudio, leitura de prints, documentos e demais materiais incorporados ao histórico. ` +
+    `promoveu devolutivas, análises de comportamento do agente e orientações específicas para cada apontamento d${o} client${suf}. ` +
+    `As tratativas envolveram ${temasExtras}, sempre com base nas evidências apresentadas (mensagens textuais, ` +
+    `transcrições de áudio, leitura de prints e documentos incorporados ao histórico). ` +
     `As interações foram conduzidas de forma cronológica, permitindo o acompanhamento contínuo do andamento de cada solicitação ` +
-    `e a confirmação das ações executadas pela equipe técnica, com registro das validações e respostas do cliente quando houve manifestação.`;
+    `e a confirmação das ações executadas pela equipe técnica, com registro das validações e respostas d${o} client${suf} quando houve manifestação.`;
 
   const fechamento = pend
-    ? `aguardando validação final ou confirmação da clínica para encerramento. ` +
+    ? `aguardando validação final ou confirmação d${o} ${contratante} para encerramento. ` +
       `O desfecho consolidado evidencia a necessidade de continuidade pontual no acompanhamento, ` +
       `mantendo o grupo ativo até a confirmação das pendências remanescentes`
     : `com o caso apto a encerramento formal. ` +
-      `O desfecho consolidado evidencia estabilização do atendimento, com pendências sanadas e fluxo do agente operando conforme alinhado com a clínica`;
+      `O desfecho consolidado evidencia estabilização do atendimento, com pendências sanadas e fluxo do agente operando conforme alinhado com ${o} ${contratante}`;
 
   const p3 =
     `Até ${lastD}, ${res} demanda(s) foram efetivamente resolvida(s) e ${pend} permanece(m) em acompanhamento, ${fechamento}. ` +
     `O conjunto de registros, anexos interpretados e devolutivas documentadas compõe a base de evidências utilizada por esta auditoria ` +
-    `para subsidiar decisões operacionais e o parecer técnico associado ao módulo Flow, ` +
-    `permitindo que o leitor compreenda integralmente a jornada do atendimento sem necessidade de acessar a conversa original ou os arquivos compartilhados.`;
+    `para subsidiar decisões operacionais e o parecer técnico associado ao módulo Flow.`;
 
-  let out = [p1, p2, p3].join("\n\n");
-  // Garante mínimo de 1000 caracteres
-  if (out.length < 1000) {
-    out +=
-      "\n\nO presente resumo foi elaborado a partir do cruzamento entre mensagens textuais, " +
-      "anexos interpretados (imagens, áudios, vídeos e documentos) e devolutivas formais da equipe Amigo Flow, " +
-      "preservando a ordem cronológica dos fatos e priorizando informações operacionalmente relevantes ao parecer.";
+  const paragraphs: string[] = [p1, p2, p3];
+
+  // p4 — citação direta d${o} client${suf}, quando houver fala representativa
+  if (firstQuote) {
+    paragraphs.push(
+      `Entre as manifestações registradas, destaca-se a fala d${o} client${suf}: "${firstQuote}". ` +
+      `Esse trecho ilustra o tom da interação e foi considerado na leitura qualitativa do atendimento ` +
+      `(referência cruzada com os anexos interpretados e com a linha do tempo consolidada). ` +
+      `[Observação: citações foram preservadas conforme registradas no histórico original, sem alteração de conteúdo.]`,
+    );
   }
-  return out;
+
+  // p5 — recomendação final / sinal de satisfação ou risco
+  const churn = (draft.metrics.churnQuotes ?? []).slice(0, 1)[0];
+  if (churn) {
+    paragraphs.push(
+      `[Atenção] Foi identificado sinal de risco de descontinuidade na fala d${o} client${suf}: "${sanitize(churn)}". ` +
+      `Recomenda-se contato direto da equipe Amigo Flow para reforço de adesão e validação de expectativas ` +
+      `(ação prioritária dentro do plano de acompanhamento da conta).`,
+    );
+  } else if (paragraphs.length < 5) {
+    paragraphs.push(
+      `[Conclusão] A leitura consolidada permite ${o === "a" ? "à leitora" : "ao leitor"} compreender integralmente a jornada do atendimento ` +
+      `sem necessidade de acessar a conversa original (os anexos foram interpretados e incorporados ao corpo do relatório). ` +
+      `Recomenda-se manter o acompanhamento próximo até a confirmação formal de todas as pendências por parte d${o} ${contratante}.`,
+    );
+  }
+
+  return paragraphs.slice(0, 5).join("\n\n");
 }
 
 const VERY_POS_RE =
@@ -941,9 +987,18 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
   y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
 
-  // ----- 7. Resumo Consolidado do Atendimento (narrativa final)
+  // ----- 7. Resumo Consolidado do Atendimento (narrativa final, com destaques em negrito)
   y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
-  y = paragraph(doc, sanitize(draft.consolidatedSummary), margin, y, contentW, 9.5) + 10;
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "normal");
+  for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
+    const text = para.trim();
+    if (!text) continue;
+    y = ensureSpace(doc, y, 28, margin);
+    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0);
+    y += 6;
+  }
+  y += 4;
 
 
 
