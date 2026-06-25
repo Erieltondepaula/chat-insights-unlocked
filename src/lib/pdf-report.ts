@@ -749,13 +749,26 @@ function buildOneBlock(
       const ins = attachmentInsightSentences(r.resolutionFilenames, insightMap);
       txt = ins.join(" ");
     }
+    // Limpa o follow-up do cliente: remove placeholders de mídia
+    // ("[Áudio enviado pela clínica]", "(arquivo anexado)", nomes de arquivo)
+    // e, quando houver insight de IA para o anexo, substitui pela transcrição/descrição real.
+    let followUpClean: string | undefined;
+    if (r.clientFollowUp) {
+      const fu = stripMediaTokens(r.clientFollowUp);
+      let base = fu.text;
+      if (fu.filenames.length) {
+        const ins = attachmentInsightSentences(fu.filenames, insightMap).join(" ");
+        if (ins) base = base ? `${base} ${ins}` : ins;
+      }
+      if (base && !LINK_TXT.test(base) && base.length > 3) followUpClean = base;
+    }
     const sig = `${who}|${(txt || "").slice(0, 80).toLowerCase()}`;
     if (seenResp.has(sig)) continue;
     seenResp.add(sig);
     responses.push({
       who,
       text: txt,
-      followUp: r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp) ? r.clientFollowUp : undefined,
+      followUp: followUpClean,
       followUpAt: r.clientFollowUpAt,
     });
   }
@@ -910,9 +923,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- 3. Indicadores Visuais (gráficos) — página dedicada para manter conjunto
-  doc.addPage();
-  y = margin;
+  // ----- 3. Indicadores Visuais (gráficos) — fluxo natural; só quebra se não couber
+  y = ensureSpace(doc, y, 360, margin);
   y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
 
@@ -924,23 +936,10 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
   y = paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), margin, y, contentW, 9.3) + 10;
 
-  // ----- 6. Conclusões e Recomendações
+  // ----- 6. Conclusões e Recomendações (somente síntese + temas — sem repetir ações/pendências)
   y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
   y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
-  y = titledParagraph(doc, "Ações Executadas", sanitize(draft.actionsExecuted), margin, y, contentW);
-  y = titledParagraph(doc, "Pendências Atuais", sanitize(draft.currentPendencies), margin, y, contentW);
-  if (draft.pendingItems.trim())
-    y = titledParagraph(doc, "Pendências Detalhadas", sanitize(draft.pendingItems), margin, y, contentW);
-  if (draft.attachmentNotes.trim())
-    y = titledParagraph(
-      doc,
-      "Imagens, Áudios e Documentos Interpretados",
-      sanitize(draft.attachmentNotes),
-      margin,
-      y,
-      contentW,
-    );
 
   // ----- 7. Resumo Consolidado do Atendimento (narrativa final)
   y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
@@ -972,36 +971,25 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   const clientPrefix = sanitize(d.dateLabel || "No dia:");
   const supportPrefix = "Retorno:";
 
-  // Strip prefix from body so we can render it bold separately
   const stripPrefix = (full: string, pref: string) =>
     full.trim().startsWith(pref) ? full.trim().slice(pref.length).trim() : full.trim();
 
   const clientBody = stripPrefix(clientText, clientPrefix);
   const supportBody = stripPrefix(supportText, supportPrefix);
 
-  // Measure
+  // Pré-mede usando linhas planas (sem rich-text) — boa aproximação para a altura do card.
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.6);
   const clientPrefW = doc.getTextWidth(clientPrefix) + 5;
-  const supportPrefW = doc.getTextWidth(supportPrefix) + 5;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.4);
-  const clientFirstLine = (doc.splitTextToSize(clientBody, innerW - clientPrefW)[0] ?? "") as string;
-  const clientRemaining = clientBody.slice(clientFirstLine.length).trim();
-  const clientRemainingLines = clientRemaining
-    ? (doc.splitTextToSize(clientRemaining, innerW) as string[])
-    : [];
-  const clientH = 14 + (1 + clientRemainingLines.length) * 12 + 6;
+  const clientFlatLines = doc.splitTextToSize(clientBody, innerW) as string[];
+  const clientH = 14 + Math.max(clientFlatLines.length, 1) * 12 + 6;
 
   doc.setFontSize(9.2);
-  const supportFirstLine = (doc.splitTextToSize(supportBody, innerW - 16 - supportPrefW)[0] ??
-    "") as string;
-  const supportRemaining = supportBody.slice(supportFirstLine.length).trim();
-  const supportRemainingLines = supportRemaining
-    ? (doc.splitTextToSize(supportRemaining, innerW - 16) as string[])
-    : [];
-  const resBoxH = 14 + (1 + supportRemainingLines.length) * 11.8 + 10;
+  const supportFlatLines = doc.splitTextToSize(supportBody, innerW - 16) as string[];
+  const resBoxH = 14 + Math.max(supportFlatLines.length, 1) * 11.8 + 10;
 
   const cardH = clientH + resBoxH + 14;
 
@@ -1014,22 +1002,15 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   doc.setFillColor(...BLUE);
   doc.rect(x, y, 4, cardH, "F");
 
-  // Client paragraph
+  // Prefixo do cliente em negrito navy, na primeira linha
   let cy = y + 18;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.6);
   doc.setTextColor(...NAVY);
   doc.text(clientPrefix, innerX, cy);
 
-  doc.setFont("helvetica", "normal");
   doc.setFontSize(9.4);
-  doc.setTextColor(...TEXT);
-  doc.text(clientFirstLine, innerX + clientPrefW, cy);
-  cy += 13;
-  for (const ln of clientRemainingLines) {
-    doc.text(ln, innerX, cy);
-    cy += 12;
-  }
+  cy = renderRichText(doc, clientBody, innerX + clientPrefW, innerX, innerW, cy, 12, clientPrefW);
   cy += 4;
 
   // Retorno sub-box
@@ -1044,18 +1025,69 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   doc.setFontSize(9.4);
   doc.setTextColor(...NAVY);
   doc.text(supportPrefix, resBoxX + 8, ry);
+  const supportPrefW = doc.getTextWidth(supportPrefix) + 5;
 
-  doc.setFont("helvetica", "normal");
   doc.setFontSize(9.2);
-  doc.setTextColor(...TEXT);
-  doc.text(supportFirstLine, resBoxX + 8 + supportPrefW, ry);
-  ry += 12;
-  for (const ln of supportRemainingLines) {
-    doc.text(ln, resBoxX + 8, ry);
-    ry += 11.8;
-  }
+  renderRichText(doc, supportBody, resBoxX + 8 + supportPrefW, resBoxX + 8, resBoxW - 16, ry, 11.8, supportPrefW);
 
   return y + cardH + 12;
+}
+
+// Regex de frases/palavras a destacar em negrito dentro de cada parágrafo.
+const HIGHLIGHT_RE =
+  /(\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b|\b\d{1,2}:\d{2}\b|\b\d+%\b|\b(?:urgente|cr[ií]tico|prioridade|erro|falha|n[aã]o funcionou|n[aã]o (?:est[aá] )?funcionando|travand\w+|cancelar|cancelad\w+|reagend\w+|reagendamento|agendamento|agendar|confirmar|confirma[cç][aã]o|pendente|pendência|resolvido|resolvid\w+|ajustar|ajuste|conv[eê]nio|paciente|m[eé]dic[oa]|recep[cç][aã]o|profissional|guia|autoriza[cç][aã]o|prontu[aá]rio)\b|\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{3,}(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,}){0,4}\b)/g;
+
+// Renderiza texto com palavras-chave em negrito, com quebra correta de linha.
+// firstX/firstOffset: a 1ª linha começa em (firstX, y) — o prefixo "No dia X:" já foi escrito antes.
+// nextX/innerW: a partir da 2ª linha, escreve em (nextX, y) com largura innerW.
+function renderRichText(
+  doc: jsPDF,
+  body: string,
+  firstX: number,
+  nextX: number,
+  innerW: number,
+  y: number,
+  lineH: number,
+  firstOffset: number,
+): number {
+  // Tokeniza preservando espaços; cada token leva uma flag de negrito.
+  const tokens: { t: string; b: boolean }[] = [];
+  let lastIdx = 0;
+  for (const m of body.matchAll(HIGHLIGHT_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > lastIdx) tokens.push({ t: body.slice(lastIdx, idx), b: false });
+    tokens.push({ t: m[0], b: true });
+    lastIdx = idx + m[0].length;
+  }
+  if (lastIdx < body.length) tokens.push({ t: body.slice(lastIdx), b: false });
+  // Quebra em palavras preservando bold
+  const words: { t: string; b: boolean }[] = [];
+  for (const tk of tokens) {
+    const parts = tk.t.split(/(\s+)/);
+    for (const p of parts) if (p.length) words.push({ t: p, b: tk.b });
+  }
+  doc.setTextColor(...TEXT);
+  let cx = firstX;
+  let maxW = innerW - firstOffset;
+  let lineStart = true;
+  for (const w of words) {
+    const isSpace = /^\s+$/.test(w.t);
+    doc.setFont("helvetica", w.b ? "bold" : "normal");
+    const tw = doc.getTextWidth(w.t);
+    if (!isSpace && cx + tw > (lineStart && cx === firstX ? firstX + maxW : nextX + innerW)) {
+      // quebra de linha
+      y += lineH;
+      cx = nextX;
+      maxW = innerW;
+      lineStart = true;
+      if (isSpace) continue;
+    }
+    if (lineStart && isSpace) continue; // não inicia linha com espaço
+    doc.text(w.t, cx, y);
+    cx += tw;
+    lineStart = false;
+  }
+  return y + lineH;
 }
 
 
