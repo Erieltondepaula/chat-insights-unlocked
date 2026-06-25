@@ -393,8 +393,9 @@ function detectClientGenderSuffix(name: string): "o" | "a" {
 
 function pickFirstClientQuote(a: Analysis): string {
   for (const m of a.messages ?? []) {
-    if (m.side !== "cliente") continue;
-    const t = cleanContent(m.message);
+    if (m.isSystem) continue;
+    if (getAmigoFlowSupportName(m.author)) continue;
+    const t = stripMediaTokens(m.content).text.trim();
     if (t && t.length > 12 && t.length < 180) return t;
   }
   return "";
