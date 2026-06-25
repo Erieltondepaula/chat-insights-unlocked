@@ -749,13 +749,26 @@ function buildOneBlock(
       const ins = attachmentInsightSentences(r.resolutionFilenames, insightMap);
       txt = ins.join(" ");
     }
+    // Limpa o follow-up do cliente: remove placeholders de mídia
+    // ("[Áudio enviado pela clínica]", "(arquivo anexado)", nomes de arquivo)
+    // e, quando houver insight de IA para o anexo, substitui pela transcrição/descrição real.
+    let followUpClean: string | undefined;
+    if (r.clientFollowUp) {
+      const fu = stripMediaTokens(r.clientFollowUp);
+      let base = fu.text;
+      if (fu.filenames.length) {
+        const ins = attachmentInsightSentences(fu.filenames, insightMap).join(" ");
+        if (ins) base = base ? `${base} ${ins}` : ins;
+      }
+      if (base && !LINK_TXT.test(base) && base.length > 3) followUpClean = base;
+    }
     const sig = `${who}|${(txt || "").slice(0, 80).toLowerCase()}`;
     if (seenResp.has(sig)) continue;
     seenResp.add(sig);
     responses.push({
       who,
       text: txt,
-      followUp: r.clientFollowUp && !LINK_TXT.test(r.clientFollowUp) ? r.clientFollowUp : undefined,
+      followUp: followUpClean,
       followUpAt: r.clientFollowUpAt,
     });
   }
