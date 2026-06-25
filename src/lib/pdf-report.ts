@@ -987,9 +987,18 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
   y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
 
-  // ----- 7. Resumo Consolidado do Atendimento (narrativa final)
+  // ----- 7. Resumo Consolidado do Atendimento (narrativa final, com destaques em negrito)
   y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
-  y = paragraph(doc, sanitize(draft.consolidatedSummary), margin, y, contentW, 9.5) + 10;
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "normal");
+  for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
+    const text = para.trim();
+    if (!text) continue;
+    y = ensureSpace(doc, y, 28, margin);
+    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0);
+    y += 6;
+  }
+  y += 4;
 
 
 
