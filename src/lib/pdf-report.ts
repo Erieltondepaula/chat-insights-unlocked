@@ -381,8 +381,11 @@ export function buildDraft(
     attachmentNotes,
     metrics: buildMetrics(a),
     consolidatedSummary: "",
+    satisfaction,
   };
-  draft.consolidatedSummary = buildConsolidatedSummary(a, draft, themes);
+  draft.consolidatedSummary =
+    (satisfaction?.consolidatedSummary && satisfaction.consolidatedSummary.trim()) ||
+    buildConsolidatedSummary(a, draft, themes);
   return draft;
 }
 
