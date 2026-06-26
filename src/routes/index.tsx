@@ -216,7 +216,40 @@ function Index() {
         setAnalysis(null);
       } else {
         setAnalysis(a);
-        setDraft(buildDraft(a, sourceLabel ?? "Relatório", insights));
+        // Heurística de gênero a partir do nome do grupo
+        const lastWord = (a.groupName || sourceLabel || "")
+          .trim()
+          .split(/\s+/)
+          .pop()
+          ?.toLowerCase() ?? "";
+        const gender: "o" | "a" =
+          /^(clinica|clínica|dra|dra\.|sra|sra\.|recep[cç][aã]o)$/.test(lastWord) || /a$/.test(lastWord)
+            ? "a"
+            : "o";
+        const convoText = msgs
+          .filter((m) => !m.isSystem)
+          .map((m) => `[${m.date.toLocaleDateString("pt-BR")} ${m.author}] ${m.content}`)
+          .join("\n")
+          .slice(0, 24000);
+        const sat = await analyzeSatisfaction({
+          data: {
+            clientName: a.groupName || sourceLabel || "",
+            clientGender: gender,
+            conversationText: convoText || "(sem texto)",
+            attachmentInsights: insights.map((i) => i.summary).filter(Boolean),
+            stats: {
+              total: a.demandStats.total,
+              resolvidas: a.demandStats.resolvidas,
+              pendentes: a.demandStats.pendentes,
+              firstDate: a.firstDate ? a.firstDate.toISOString().slice(0, 10) : null,
+              lastDate: a.lastDate ? a.lastDate.toISOString().slice(0, 10) : null,
+              resolvers: a.demandStats.resolvedoresTop.slice(0, 3).map((r) => r.name),
+              themes: [],
+            },
+          },
+        }).catch(() => null);
+        setSatisfaction(sat);
+        setDraft(buildDraft(a, sourceLabel ?? "Relatório", insights, sat));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao analisar.");
@@ -226,7 +259,7 @@ function Index() {
   }
 
   function resetDraft() {
-    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights));
+    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights, satisfaction));
   }
 
   function downloadPdf() {
