@@ -251,6 +251,7 @@ export function buildDraft(
   a: Analysis,
   sourceName: string,
   attachmentInsights: AttachmentInsight[] = [],
+  satisfaction: SatisfactionAnalysis | null = null,
 ): ReportDraft {
   const title = sanitize(
     (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, ""),
