@@ -115,6 +115,7 @@ function Index() {
     setAnalysis(null);
     setDraft(null);
     setAttachmentInsights([]);
+    setSatisfaction(null);
     if (files.length === 0) return;
 
     const buckets: ExtraMedia = {
