@@ -3,6 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
 import {
+  analyzeSatisfaction,
+  type SatisfactionAnalysis,
+} from "@/lib/satisfaction-analysis.functions";
+import {
   buildDraft,
   generatePdf,
   type AttachmentInsight,
