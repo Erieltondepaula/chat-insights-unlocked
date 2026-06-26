@@ -1052,8 +1052,40 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   const resBoxH = 14 + Math.max(supportFlatLines.length, 1) * 11.8 + 10;
 
   const cardH = clientH + resBoxH + 14;
+  const pageH = doc.internal.pageSize.getHeight();
+  const availableNow = pageH - 14 - y;
+  const pageInner = pageH - 14 - x; // pessimista
+  const cardFitsOnFreshPage = cardH + 8 <= pageInner;
 
-  y = ensureSpace(doc, y, cardH + 8, x);
+  // Se o card é grande demais para caber em uma página inteira, renderiza como
+  // fluxo de parágrafos (sem moldura), permitindo quebra natural entre páginas
+  // e evitando enormes espaços em branco.
+  if (!cardFitsOnFreshPage) {
+    y = ensureSpace(doc, y, 24, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.6);
+    doc.setTextColor(...NAVY);
+    doc.text(clientPrefix, x, y + 12);
+    const prefW = doc.getTextWidth(clientPrefix) + 5;
+    doc.setFontSize(9.4);
+    let py = renderRichText(doc, clientBody, x + prefW, x, w, y + 12, 12, prefW, true, x);
+    py += 6;
+    py = ensureSpace(doc, py, 18, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.4);
+    doc.setTextColor(...NAVY);
+    doc.text(supportPrefix, x, py);
+    const sPrefW = doc.getTextWidth(supportPrefix) + 5;
+    doc.setFontSize(9.2);
+    py = renderRichText(doc, supportBody, x + sPrefW, x, w, py, 11.8, sPrefW, true, x);
+    return py + 14;
+  }
+
+  // Se não cabe agora mas cabe em página nova, vale a pena quebrar.
+  // Caso contrário, mantém na página atual.
+  if (cardH + 8 > availableNow && cardH + 8 <= pageInner) {
+    y = ensureSpace(doc, y, cardH + 8, x);
+  }
 
   // Card background + left blue bar
   doc.setDrawColor(...RULE);
