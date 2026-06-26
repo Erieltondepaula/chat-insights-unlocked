@@ -8,6 +8,7 @@ import {
   type Analysis,
   type Demand,
 } from "./whatsapp-parser";
+import type { SatisfactionAnalysis } from "./satisfaction-analysis.functions";
 
 // Palette tuned to the v2 reference layout
 const NAVY: [number, number, number] = [14, 58, 95]; // #0E3A5F — titles, section headers
