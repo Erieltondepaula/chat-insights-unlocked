@@ -1109,6 +1109,8 @@ function renderRichText(
   y: number,
   lineH: number,
   firstOffset: number,
+  pageBreak: boolean = false,
+  margin: number = 48,
 ): number {
   // Tokeniza preservando espaços; cada token leva uma flag de negrito.
   const tokens: { t: string; b: boolean }[] = [];
@@ -1120,7 +1122,6 @@ function renderRichText(
     lastIdx = idx + m[0].length;
   }
   if (lastIdx < body.length) tokens.push({ t: body.slice(lastIdx), b: false });
-  // Quebra em palavras preservando bold
   const words: { t: string; b: boolean }[] = [];
   for (const tk of tokens) {
     const parts = tk.t.split(/(\s+)/);
@@ -1135,19 +1136,152 @@ function renderRichText(
     doc.setFont("helvetica", w.b ? "bold" : "normal");
     const tw = doc.getTextWidth(w.t);
     if (!isSpace && cx + tw > (lineStart && cx === firstX ? firstX + maxW : nextX + innerW)) {
-      // quebra de linha
       y += lineH;
+      if (pageBreak) y = ensureSpace(doc, y, lineH, margin);
       cx = nextX;
       maxW = innerW;
       lineStart = true;
       if (isSpace) continue;
     }
-    if (lineStart && isSpace) continue; // não inicia linha com espaço
+    if (lineStart && isSpace) continue;
     doc.text(w.t, cx, y);
     cx += tw;
     lineStart = false;
   }
   return y + lineH;
+}
+
+// ============================================================
+// Section 5 renderer — rich satisfaction analysis from AI
+// ============================================================
+function renderSatisfactionSection(
+  doc: jsPDF,
+  draft: ReportDraft,
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const s = draft.satisfaction;
+  if (!s) {
+    return paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), x, y, w, 9.3);
+  }
+
+  const sentimentLabel: Record<string, string> = {
+    muito_satisfeito: "Muito satisfeito",
+    satisfeito: "Satisfeito",
+    neutro: "Neutro",
+    insatisfeito: "Insatisfeito",
+    muito_insatisfeito: "Muito insatisfeito",
+  };
+  const churnLabel: Record<string, string> = {
+    baixo: "Baixo",
+    medio: "Médio",
+    alto: "Alto",
+  };
+  const sitLabel: Record<string, string> = {
+    resolvido: "Problema resolvido",
+    parcialmente_resolvido: "Parcialmente resolvido",
+    nao_resolvido: "Não resolvido",
+  };
+  const evoLabel: Record<string, string> = {
+    melhorou: "Melhorou",
+    piorou: "Piorou",
+    permaneceu: "Permaneceu igual",
+  };
+
+  const chips: { label: string; value: string; tone: [number, number, number] }[] = [
+    { label: "Sentimento", value: sentimentLabel[s.sentiment] ?? s.sentiment, tone: NAVY_DEEP },
+    { label: "Score", value: `${s.score}/100`, tone: BLUE },
+    { label: "Confiança", value: `${s.confidence}%`, tone: [46, 139, 87] },
+    { label: "Emoção", value: s.emotion || "—", tone: [120, 70, 160] },
+    { label: "Evolução", value: evoLabel[s.evolution] ?? s.evolution, tone: NAVY },
+    { label: "Situação", value: sitLabel[s.finalSituation] ?? s.finalSituation, tone: BLUE },
+    {
+      label: "Risco de churn",
+      value: churnLabel[s.churnRisk] ?? s.churnRisk,
+      tone: s.churnRisk === "alto" ? ALERT_BORDER : s.churnRisk === "medio" ? [200, 120, 30] : [46, 139, 87],
+    },
+    {
+      label: "Intervenção humana",
+      value: s.humanInterventionNeeded ? "Sim" : "Não",
+      tone: s.humanInterventionNeeded ? ALERT_BORDER : [46, 139, 87],
+    },
+  ];
+
+  const cols = 4;
+  const gap = 6;
+  const cw = (w - gap * (cols - 1)) / cols;
+  const ch = 42;
+  const rows = Math.ceil(chips.length / cols);
+  y = ensureSpace(doc, y, rows * (ch + gap) + 4, x);
+  for (let i = 0; i < chips.length; i++) {
+    const c = chips[i];
+    const cx = x + (i % cols) * (cw + gap);
+    const cy = y + Math.floor(i / cols) * (ch + gap);
+    doc.setFillColor(...INFO_BG);
+    doc.roundedRect(cx, cy, cw, ch, 3, 3, "F");
+    doc.setFillColor(...c.tone);
+    doc.rect(cx, cy, 3, ch, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.6);
+    doc.setTextColor(...MUTED);
+    doc.text(c.label.toUpperCase(), cx + 8, cy + 12);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...c.tone);
+    const v = doc.splitTextToSize(c.value, cw - 12)[0] ?? "";
+    doc.text(v, cx + 8, cy + 28);
+  }
+  y += rows * (ch + gap) + 6;
+
+  // Contadores
+  const counters: { label: string; value: string }[] = [
+    { label: "Reclamações", value: String(s.complaintsCount ?? 0) },
+    { label: "Elogios", value: String(s.praisesCount ?? 0) },
+    { label: "Solicitações repetidas", value: String(s.repeatedRequestsCount ?? 0) },
+  ];
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...TEXT);
+  const counterLine = counters.map((c) => `${c.label}: ${c.value}`).join("  •  ");
+  y = ensureSpace(doc, y, 14, x);
+  doc.text(counterLine, x, y);
+  y += 14;
+
+  // Resumo executivo
+  if (s.executiveSummary) {
+    y = ensureSpace(doc, y, 22, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.2);
+    doc.setTextColor(...NAVY);
+    doc.text("Resumo da análise:", x, y);
+    y += 12;
+    y = renderRichText(doc, sanitize(s.executiveSummary), x, x, w, y, 12, 0, true, x) + 2;
+  }
+
+  // Principais motivos
+  if (s.mainReasons?.length) {
+    y = ensureSpace(doc, y, 22, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.2);
+    doc.setTextColor(...NAVY);
+    doc.text("Principais motivos:", x, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXT);
+    for (const r of s.mainReasons) {
+      y = ensureSpace(doc, y, 12, x);
+      const lines = doc.splitTextToSize(`• ${sanitize(r)}`, w);
+      for (const ln of lines) {
+        y = ensureSpace(doc, y, 12, x);
+        doc.text(ln, x, y);
+        y += 11.5;
+      }
+    }
+  }
+
+  return y;
 }
 
 
