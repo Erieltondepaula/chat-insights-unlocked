@@ -999,8 +999,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
     const text = para.trim();
     if (!text) continue;
-    y = ensureSpace(doc, y, 28, margin);
-    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0);
+    y = ensureSpace(doc, y, 24, margin);
+    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0, true, margin);
     y += 6;
   }
   y += 4;
