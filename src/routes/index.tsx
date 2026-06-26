@@ -90,6 +90,7 @@ function Index() {
   });
   const [mediaFiles, setMediaFiles] = useState<MediaAttachmentFile[]>([]);
   const [attachmentInsights, setAttachmentInsights] = useState<AttachmentInsight[]>([]);
+  const [satisfaction, setSatisfaction] = useState<SatisfactionAnalysis | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [loading, setLoading] = useState(false);
