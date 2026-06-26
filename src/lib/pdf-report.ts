@@ -8,6 +8,7 @@ import {
   type Analysis,
   type Demand,
 } from "./whatsapp-parser";
+import type { SatisfactionAnalysis } from "./satisfaction-analysis.functions";
 
 // Palette tuned to the v2 reference layout
 const NAVY: [number, number, number] = [14, 58, 95]; // #0E3A5F — titles, section headers
@@ -85,6 +86,7 @@ export type ReportDraft = {
   attachmentNotes: string;
   metrics: ReportMetrics;
   consolidatedSummary: string;
+  satisfaction?: SatisfactionAnalysis | null;
 };
 
 const SUPPORT_ORG = "Amigo Flow";
@@ -249,6 +251,7 @@ export function buildDraft(
   a: Analysis,
   sourceName: string,
   attachmentInsights: AttachmentInsight[] = [],
+  satisfaction: SatisfactionAnalysis | null = null,
 ): ReportDraft {
   const title = sanitize(
     (a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, ""),
@@ -378,8 +381,11 @@ export function buildDraft(
     attachmentNotes,
     metrics: buildMetrics(a),
     consolidatedSummary: "",
+    satisfaction,
   };
-  draft.consolidatedSummary = buildConsolidatedSummary(a, draft, themes);
+  draft.consolidatedSummary =
+    (satisfaction?.consolidatedSummary && satisfaction.consolidatedSummary.trim()) ||
+    buildConsolidatedSummary(a, draft, themes);
   return draft;
 }
 
@@ -969,18 +975,17 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- 3. Indicadores Visuais (gráficos) — fluxo natural; só quebra se não couber
-  y = ensureSpace(doc, y, 360, margin);
+  // ----- 3. Indicadores Visuais (gráficos) — fluxo natural; sem buffer agressivo
   y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
 
   // ----- 4. Análise do Atendimento (situação atual)
   y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
-  y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 10;
+  y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 8;
 
   // ----- 5. Sentimentos e Satisfação
   y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
-  y = paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), margin, y, contentW, 9.3) + 10;
+  y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
 
   // ----- 6. Conclusões e Recomendações (somente síntese + temas — sem repetir ações/pendências)
   y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
@@ -994,8 +999,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
     const text = para.trim();
     if (!text) continue;
-    y = ensureSpace(doc, y, 28, margin);
-    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0);
+    y = ensureSpace(doc, y, 24, margin);
+    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0, true, margin);
     y += 6;
   }
   y += 4;
@@ -1047,8 +1052,40 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   const resBoxH = 14 + Math.max(supportFlatLines.length, 1) * 11.8 + 10;
 
   const cardH = clientH + resBoxH + 14;
+  const pageH = doc.internal.pageSize.getHeight();
+  const availableNow = pageH - 14 - y;
+  const pageInner = pageH - 14 - x; // pessimista
+  const cardFitsOnFreshPage = cardH + 8 <= pageInner;
 
-  y = ensureSpace(doc, y, cardH + 8, x);
+  // Se o card é grande demais para caber em uma página inteira, renderiza como
+  // fluxo de parágrafos (sem moldura), permitindo quebra natural entre páginas
+  // e evitando enormes espaços em branco.
+  if (!cardFitsOnFreshPage) {
+    y = ensureSpace(doc, y, 24, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.6);
+    doc.setTextColor(...NAVY);
+    doc.text(clientPrefix, x, y + 12);
+    const prefW = doc.getTextWidth(clientPrefix) + 5;
+    doc.setFontSize(9.4);
+    let py = renderRichText(doc, clientBody, x + prefW, x, w, y + 12, 12, prefW, true, x);
+    py += 6;
+    py = ensureSpace(doc, py, 18, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.4);
+    doc.setTextColor(...NAVY);
+    doc.text(supportPrefix, x, py);
+    const sPrefW = doc.getTextWidth(supportPrefix) + 5;
+    doc.setFontSize(9.2);
+    py = renderRichText(doc, supportBody, x + sPrefW, x, w, py, 11.8, sPrefW, true, x);
+    return py + 14;
+  }
+
+  // Se não cabe agora mas cabe em página nova, vale a pena quebrar.
+  // Caso contrário, mantém na página atual.
+  if (cardH + 8 > availableNow && cardH + 8 <= pageInner) {
+    y = ensureSpace(doc, y, cardH + 8, x);
+  }
 
   // Card background + left blue bar
   doc.setDrawColor(...RULE);
@@ -1104,6 +1141,8 @@ function renderRichText(
   y: number,
   lineH: number,
   firstOffset: number,
+  pageBreak: boolean = false,
+  margin: number = 48,
 ): number {
   // Tokeniza preservando espaços; cada token leva uma flag de negrito.
   const tokens: { t: string; b: boolean }[] = [];
@@ -1115,7 +1154,6 @@ function renderRichText(
     lastIdx = idx + m[0].length;
   }
   if (lastIdx < body.length) tokens.push({ t: body.slice(lastIdx), b: false });
-  // Quebra em palavras preservando bold
   const words: { t: string; b: boolean }[] = [];
   for (const tk of tokens) {
     const parts = tk.t.split(/(\s+)/);
@@ -1130,19 +1168,152 @@ function renderRichText(
     doc.setFont("helvetica", w.b ? "bold" : "normal");
     const tw = doc.getTextWidth(w.t);
     if (!isSpace && cx + tw > (lineStart && cx === firstX ? firstX + maxW : nextX + innerW)) {
-      // quebra de linha
       y += lineH;
+      if (pageBreak) y = ensureSpace(doc, y, lineH, margin);
       cx = nextX;
       maxW = innerW;
       lineStart = true;
       if (isSpace) continue;
     }
-    if (lineStart && isSpace) continue; // não inicia linha com espaço
+    if (lineStart && isSpace) continue;
     doc.text(w.t, cx, y);
     cx += tw;
     lineStart = false;
   }
   return y + lineH;
+}
+
+// ============================================================
+// Section 5 renderer — rich satisfaction analysis from AI
+// ============================================================
+function renderSatisfactionSection(
+  doc: jsPDF,
+  draft: ReportDraft,
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const s = draft.satisfaction;
+  if (!s) {
+    return paragraph(doc, sanitize(buildSentimentNarrative(draft.metrics)), x, y, w, 9.3);
+  }
+
+  const sentimentLabel: Record<string, string> = {
+    muito_satisfeito: "Muito satisfeito",
+    satisfeito: "Satisfeito",
+    neutro: "Neutro",
+    insatisfeito: "Insatisfeito",
+    muito_insatisfeito: "Muito insatisfeito",
+  };
+  const churnLabel: Record<string, string> = {
+    baixo: "Baixo",
+    medio: "Médio",
+    alto: "Alto",
+  };
+  const sitLabel: Record<string, string> = {
+    resolvido: "Problema resolvido",
+    parcialmente_resolvido: "Parcialmente resolvido",
+    nao_resolvido: "Não resolvido",
+  };
+  const evoLabel: Record<string, string> = {
+    melhorou: "Melhorou",
+    piorou: "Piorou",
+    permaneceu: "Permaneceu igual",
+  };
+
+  const chips: { label: string; value: string; tone: [number, number, number] }[] = [
+    { label: "Sentimento", value: sentimentLabel[s.sentiment] ?? s.sentiment, tone: NAVY_DEEP },
+    { label: "Score", value: `${s.score}/100`, tone: BLUE },
+    { label: "Confiança", value: `${s.confidence}%`, tone: [46, 139, 87] },
+    { label: "Emoção", value: s.emotion || "—", tone: [120, 70, 160] },
+    { label: "Evolução", value: evoLabel[s.evolution] ?? s.evolution, tone: NAVY },
+    { label: "Situação", value: sitLabel[s.finalSituation] ?? s.finalSituation, tone: BLUE },
+    {
+      label: "Risco de churn",
+      value: churnLabel[s.churnRisk] ?? s.churnRisk,
+      tone: s.churnRisk === "alto" ? ALERT_BORDER : s.churnRisk === "medio" ? [200, 120, 30] : [46, 139, 87],
+    },
+    {
+      label: "Intervenção humana",
+      value: s.humanInterventionNeeded ? "Sim" : "Não",
+      tone: s.humanInterventionNeeded ? ALERT_BORDER : [46, 139, 87],
+    },
+  ];
+
+  const cols = 4;
+  const gap = 6;
+  const cw = (w - gap * (cols - 1)) / cols;
+  const ch = 42;
+  const rows = Math.ceil(chips.length / cols);
+  y = ensureSpace(doc, y, rows * (ch + gap) + 4, x);
+  for (let i = 0; i < chips.length; i++) {
+    const c = chips[i];
+    const cx = x + (i % cols) * (cw + gap);
+    const cy = y + Math.floor(i / cols) * (ch + gap);
+    doc.setFillColor(...INFO_BG);
+    doc.roundedRect(cx, cy, cw, ch, 3, 3, "F");
+    doc.setFillColor(...c.tone);
+    doc.rect(cx, cy, 3, ch, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.6);
+    doc.setTextColor(...MUTED);
+    doc.text(c.label.toUpperCase(), cx + 8, cy + 12);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...c.tone);
+    const v = doc.splitTextToSize(c.value, cw - 12)[0] ?? "";
+    doc.text(v, cx + 8, cy + 28);
+  }
+  y += rows * (ch + gap) + 6;
+
+  // Contadores
+  const counters: { label: string; value: string }[] = [
+    { label: "Reclamações", value: String(s.complaintsCount ?? 0) },
+    { label: "Elogios", value: String(s.praisesCount ?? 0) },
+    { label: "Solicitações repetidas", value: String(s.repeatedRequestsCount ?? 0) },
+  ];
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...TEXT);
+  const counterLine = counters.map((c) => `${c.label}: ${c.value}`).join("  •  ");
+  y = ensureSpace(doc, y, 14, x);
+  doc.text(counterLine, x, y);
+  y += 14;
+
+  // Resumo executivo
+  if (s.executiveSummary) {
+    y = ensureSpace(doc, y, 22, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.2);
+    doc.setTextColor(...NAVY);
+    doc.text("Resumo da análise:", x, y);
+    y += 12;
+    y = renderRichText(doc, sanitize(s.executiveSummary), x, x, w, y, 12, 0, true, x) + 2;
+  }
+
+  // Principais motivos
+  if (s.mainReasons?.length) {
+    y = ensureSpace(doc, y, 22, x);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.2);
+    doc.setTextColor(...NAVY);
+    doc.text("Principais motivos:", x, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXT);
+    for (const r of s.mainReasons) {
+      y = ensureSpace(doc, y, 12, x);
+      const lines = doc.splitTextToSize(`• ${sanitize(r)}`, w);
+      for (const ln of lines) {
+        y = ensureSpace(doc, y, 12, x);
+        doc.text(ln, x, y);
+        y += 11.5;
+      }
+    }
+  }
+
+  return y;
 }
 
 
