@@ -612,6 +612,9 @@ function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = n
       continue;
     }
   }
+  if (!muitoSatisfeito && !satisfeito && !neutro && !insatisfeito && !churnRisk && (samples.length || a.demands.length)) {
+    neutro = 1;
+  }
 
   return metricsWithAiSatisfaction({
     totalSolicitacoes,
