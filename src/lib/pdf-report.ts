@@ -379,7 +379,7 @@ export function buildDraft(
         : "• Recomenda-se manter acompanhamento até confirmação formal das pendências.",
     ].join("\n"),
     attachmentNotes,
-    metrics: buildMetrics(a),
+    metrics: buildMetrics(a, satisfaction),
     consolidatedSummary: "",
     satisfaction,
   };
@@ -505,7 +505,40 @@ const NEG_RE =
 const CHURN_RE =
   /\b(voltar (?:para )?(?:o )?(?:sistema )?antigo|prefiro .* antigo|sistema antigo .* melhor|considerando cancelar|pensando em cancelar|procurar outra solu[cç][aã]o|n[aã]o valeu .* mudan[cç]a|arrependid\w+ (?:da )?(?:troca|contrata[cç][aã]o)|quero voltar|n[aã]o me adaptei|n[aã]o recomendo|avaliando trocar|trocar de fornecedor|se continuar assim .* cancelar|vamos cancelar|atrapalha mais do que ajuda|d[aá] mais trabalho do que ajuda|perdendo produtividade|equipe n[aã]o (?:gostou|quer usar)|ades[aã]o .* baixa|resist[eê]ncia [aà] mudan[cç]a|colaboradores preferem .* antigo)\b/i;
 
-function buildMetrics(a: Analysis): ReportMetrics {
+function formatParticipantLabel(value: string): string {
+  const raw = sanitize(value || "").trim();
+  if (!raw) return "—";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length >= 10) {
+    if (digits.startsWith("55") && digits.length >= 12) {
+      const ddd = digits.slice(2, 4);
+      const local = digits.slice(4);
+      if (local.length === 9) return `+55 (${ddd}) ${local.slice(0, 5)}-${local.slice(5)}`;
+      if (local.length === 8) return `+55 (${ddd}) ${local.slice(0, 4)}-${local.slice(4)}`;
+    }
+    return raw;
+  }
+  return raw;
+}
+
+function metricsWithAiSatisfaction(metrics: ReportMetrics, satisfaction: SatisfactionAnalysis | null): ReportMetrics {
+  if (!satisfaction) return metrics;
+  const satisfacao = {
+    muitoSatisfeito: 0,
+    satisfeito: 0,
+    neutro: 0,
+    insatisfeito: 0,
+    churnRisk: satisfaction.churnRisk === "alto" ? 1 : satisfaction.churnRisk === "medio" ? 1 : 0,
+  };
+  if (satisfaction.sentiment === "muito_satisfeito") satisfacao.muitoSatisfeito = 1;
+  else if (satisfaction.sentiment === "satisfeito") satisfacao.satisfeito = 1;
+  else if (satisfaction.sentiment === "insatisfeito" || satisfaction.sentiment === "muito_insatisfeito") satisfacao.insatisfeito = 1;
+  else satisfacao.neutro = 1;
+
+  return { ...metrics, satisfacao };
+}
+
+function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = null): ReportMetrics {
   const totalSolicitacoes = a.demands.length;
   const resolvidas = a.demands.filter((d) => d.status === "resolvido").length;
   const pendentes = a.demands.filter((d) => d.status === "pendente").length;
@@ -514,7 +547,7 @@ function buildMetrics(a: Analysis): ReportMetrics {
 
   const reqMap = new Map<string, number>();
   for (const d of a.demands) {
-    const n = sanitize(d.requester || "—").split(/\s+/)[0] || "—";
+    const n = formatParticipantLabel(d.requester || "—");
     reqMap.set(n, (reqMap.get(n) ?? 0) + 1);
   }
   const topRequesters = [...reqMap.entries()]
@@ -579,8 +612,11 @@ function buildMetrics(a: Analysis): ReportMetrics {
       continue;
     }
   }
+  if (!muitoSatisfeito && !satisfeito && !neutro && !insatisfeito && !churnRisk && (samples.length || a.demands.length)) {
+    neutro = 1;
+  }
 
-  return {
+  return metricsWithAiSatisfaction({
     totalSolicitacoes,
     totalRespostas,
     pendentes,
@@ -590,7 +626,7 @@ function buildMetrics(a: Analysis): ReportMetrics {
     topResponders,
     satisfacao: { muitoSatisfeito, satisfeito, neutro, insatisfeito, churnRisk },
     churnQuotes,
-  };
+  }, satisfaction);
 }
 
 // ============================================================
@@ -975,17 +1011,26 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- 3. Indicadores Visuais (gráficos) — fluxo natural; sem buffer agressivo
+  // ----- 3 + 5 juntos: mantém indicadores e satisfação no mesmo bloco visual
+  // sempre que couber em uma folha nova, evitando páginas quase vazias.
+  y = ensureGroupStart(
+    doc,
+    y,
+    estimateMetricsHeight(draft.metrics) + estimateSatisfactionHeight(doc, draft, contentW) + 74,
+    margin,
+  );
+
+  // ----- 3. Indicadores Visuais (gráficos)
   y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+
+  // ----- 5. Sentimentos e Satisfação — posicionado logo após os indicadores
+  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
+  y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
 
   // ----- 4. Análise do Atendimento (situação atual)
   y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
   y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 8;
-
-  // ----- 5. Sentimentos e Satisfação
-  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
-  y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
 
   // ----- 6. Conclusões e Recomendações (somente síntese + temas — sem repetir ações/pendências)
   y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
@@ -1060,7 +1105,9 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   // Se o card é grande demais para caber em uma página inteira, renderiza como
   // fluxo de parágrafos (sem moldura), permitindo quebra natural entre páginas
   // e evitando enormes espaços em branco.
-  if (!cardFitsOnFreshPage) {
+  const shouldFlowInsteadOfCard =
+    !cardFitsOnFreshPage || (cardH + 8 > availableNow && availableNow > pageInner * 0.22);
+  if (shouldFlowInsteadOfCard) {
     y = ensureSpace(doc, y, 24, x);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.6);
@@ -1393,6 +1440,31 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
 // ============================================================
 // CHARTS / METRICS RENDERER
 // ============================================================
+function barChartHeight(items: { name: string; count: number }[]): number {
+  return 26 + Math.max(items.length, 1) * 16 + 10;
+}
+
+function estimateMetricsHeight(m: ReportMetrics): number {
+  const barRowH = Math.max(barChartHeight(m.topRequesters), barChartHeight(m.topResponders));
+  const alertH = m.satisfacao.churnRisk > 0 || m.churnQuotes.length > 0
+    ? 26 + Math.min(m.churnQuotes.length, 3) * 12 + 18
+    : 0;
+  return 50 + 16 + barRowH + 10 + 110 + 10 + alertH;
+}
+
+function estimateSatisfactionHeight(doc: jsPDF, draft: ReportDraft, w: number): number {
+  const s = draft.satisfaction;
+  if (!s) return 62;
+  let h = Math.ceil(8 / 4) * (42 + 6) + 20;
+  if (s.executiveSummary) {
+    h += 14 + (doc.splitTextToSize(sanitize(s.executiveSummary), w) as string[]).length * 12 + 4;
+  }
+  if (s.mainReasons?.length) {
+    h += 14 + s.mainReasons.slice(0, 6).reduce((sum, r) => sum + Math.max(1, (doc.splitTextToSize(`• ${sanitize(r)}`, w) as string[]).length) * 12, 0);
+  }
+  return h;
+}
+
 function renderMetrics(
   doc: jsPDF,
   m: ReportMetrics,
@@ -1431,9 +1503,11 @@ function renderMetrics(
 
   // Two-column charts: Top solicitantes | Top respondentes
   const colW = (w - 14) / 2;
+  const barRowH = Math.max(barChartHeight(m.topRequesters), barChartHeight(m.topResponders));
+  y = ensureSpace(doc, y, barRowH + 4, x);
   let leftY = y;
   let rightY = y;
-  leftY = renderBarChart(doc, "Quem mais solicitou", m.topRequesters, x, leftY, colW);
+  leftY = renderBarChart(doc, "Quem mais solicitou", m.topRequesters, x, leftY, colW, true);
   rightY = renderBarChart(
     doc,
     "Quem mais respondeu",
@@ -1441,10 +1515,12 @@ function renderMetrics(
     x + colW + 14,
     rightY,
     colW,
+    true,
   );
   y = Math.max(leftY, rightY) + 10;
 
   // Pendência x Resolução (stacked bar) + Satisfação (donut-ish)
+  y = ensureSpace(doc, y, 114, x);
   leftY = renderStackBar(
     doc,
     "Pendência × Resolução",
@@ -1455,6 +1531,7 @@ function renderMetrics(
     x,
     y,
     colW,
+    true,
   );
   rightY = renderDonut(
     doc,
@@ -1469,6 +1546,7 @@ function renderMetrics(
     x + colW + 14,
     y,
     colW,
+    true,
   );
   y = Math.max(leftY, rightY) + 10;
 
@@ -1508,11 +1586,11 @@ function renderBarChart(
   x: number,
   y: number,
   w: number,
+  skipEnsure = false,
 ): number {
-  const rows = Math.max(items.length, 1);
   const rowH = 16;
-  const h = 26 + rows * rowH + 10;
-  y = ensureSpace(doc, y, h + 4, x);
+  const h = barChartHeight(items);
+  y = skipEnsure ? y : ensureSpace(doc, y, h + 4, x);
   doc.setDrawColor(...RULE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 3, 3, "FD");
@@ -1528,15 +1606,15 @@ function renderBarChart(
     return y + h;
   }
   const max = Math.max(...items.map((i) => i.count), 1);
-  const labelW = 70;
+  const labelW = Math.min(118, Math.max(82, w * 0.42));
   const barX = x + 10 + labelW;
-  const barMaxW = w - 20 - labelW - 30;
+  const barMaxW = Math.max(28, w - 20 - labelW - 30);
   let by = y + 30;
   for (const it of items) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.4);
     doc.setTextColor(...TEXT);
-    const label = (it.name || "—").slice(0, 14);
+    const label = doc.splitTextToSize(it.name || "—", labelW - 4)[0] ?? "—";
     doc.text(label, x + 10, by + 8);
     const bw = (it.count / max) * barMaxW;
     doc.setFillColor(...BLUE);
@@ -1556,9 +1634,10 @@ function renderStackBar(
   x: number,
   y: number,
   w: number,
+  skipEnsure = false,
 ): number {
   const h = 90;
-  y = ensureSpace(doc, y, h + 4, x);
+  y = skipEnsure ? y : ensureSpace(doc, y, h + 4, x);
   doc.setDrawColor(...RULE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 3, 3, "FD");
@@ -1600,9 +1679,10 @@ function renderDonut(
   x: number,
   y: number,
   w: number,
+  skipEnsure = false,
 ): number {
   const h = 110;
-  y = ensureSpace(doc, y, h + 4, x);
+  y = skipEnsure ? y : ensureSpace(doc, y, h + 4, x);
   doc.setDrawColor(...RULE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 3, 3, "FD");
@@ -1624,7 +1704,7 @@ function renderDonut(
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8.5);
     doc.setTextColor(...MUTED);
-    doc.text("Sem retorno do cliente.", x + 76, cy);
+    doc.text("Satisfação não conclusiva.", x + 76, cy);
     return y + h;
   }
 
@@ -1669,6 +1749,17 @@ function renderDonut(
 function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
   const pageH = doc.internal.pageSize.getHeight();
   if (y + needed > pageH - 14) {
+    doc.addPage();
+    return margin;
+  }
+  return y;
+}
+
+function ensureGroupStart(doc: jsPDF, y: number, needed: number, margin: number): number {
+  const pageH = doc.internal.pageSize.getHeight();
+  const availableNow = pageH - 14 - y;
+  const freshPageSpace = pageH - 14 - margin;
+  if (needed <= freshPageSpace && needed > availableNow && y > margin + 18) {
     doc.addPage();
     return margin;
   }
