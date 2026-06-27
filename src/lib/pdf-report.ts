@@ -379,7 +379,7 @@ export function buildDraft(
         : "• Recomenda-se manter acompanhamento até confirmação formal das pendências.",
     ].join("\n"),
     attachmentNotes,
-    metrics: buildMetrics(a),
+    metrics: buildMetrics(a, satisfaction),
     consolidatedSummary: "",
     satisfaction,
   };
@@ -505,7 +505,40 @@ const NEG_RE =
 const CHURN_RE =
   /\b(voltar (?:para )?(?:o )?(?:sistema )?antigo|prefiro .* antigo|sistema antigo .* melhor|considerando cancelar|pensando em cancelar|procurar outra solu[cç][aã]o|n[aã]o valeu .* mudan[cç]a|arrependid\w+ (?:da )?(?:troca|contrata[cç][aã]o)|quero voltar|n[aã]o me adaptei|n[aã]o recomendo|avaliando trocar|trocar de fornecedor|se continuar assim .* cancelar|vamos cancelar|atrapalha mais do que ajuda|d[aá] mais trabalho do que ajuda|perdendo produtividade|equipe n[aã]o (?:gostou|quer usar)|ades[aã]o .* baixa|resist[eê]ncia [aà] mudan[cç]a|colaboradores preferem .* antigo)\b/i;
 
-function buildMetrics(a: Analysis): ReportMetrics {
+function formatParticipantLabel(value: string): string {
+  const raw = sanitize(value || "").trim();
+  if (!raw) return "—";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length >= 10) {
+    if (digits.startsWith("55") && digits.length >= 12) {
+      const ddd = digits.slice(2, 4);
+      const local = digits.slice(4);
+      if (local.length === 9) return `+55 (${ddd}) ${local.slice(0, 5)}-${local.slice(5)}`;
+      if (local.length === 8) return `+55 (${ddd}) ${local.slice(0, 4)}-${local.slice(4)}`;
+    }
+    return raw;
+  }
+  return raw;
+}
+
+function metricsWithAiSatisfaction(metrics: ReportMetrics, satisfaction: SatisfactionAnalysis | null): ReportMetrics {
+  if (!satisfaction) return metrics;
+  const satisfacao = {
+    muitoSatisfeito: 0,
+    satisfeito: 0,
+    neutro: 0,
+    insatisfeito: 0,
+    churnRisk: satisfaction.churnRisk === "alto" ? 1 : satisfaction.churnRisk === "medio" ? 1 : 0,
+  };
+  if (satisfaction.sentiment === "muito_satisfeito") satisfacao.muitoSatisfeito = 1;
+  else if (satisfaction.sentiment === "satisfeito") satisfacao.satisfeito = 1;
+  else if (satisfaction.sentiment === "insatisfeito" || satisfaction.sentiment === "muito_insatisfeito") satisfacao.insatisfeito = 1;
+  else satisfacao.neutro = 1;
+
+  return { ...metrics, satisfacao };
+}
+
+function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = null): ReportMetrics {
   const totalSolicitacoes = a.demands.length;
   const resolvidas = a.demands.filter((d) => d.status === "resolvido").length;
   const pendentes = a.demands.filter((d) => d.status === "pendente").length;
@@ -514,7 +547,7 @@ function buildMetrics(a: Analysis): ReportMetrics {
 
   const reqMap = new Map<string, number>();
   for (const d of a.demands) {
-    const n = sanitize(d.requester || "—").split(/\s+/)[0] || "—";
+    const n = formatParticipantLabel(d.requester || "—");
     reqMap.set(n, (reqMap.get(n) ?? 0) + 1);
   }
   const topRequesters = [...reqMap.entries()]
@@ -580,7 +613,7 @@ function buildMetrics(a: Analysis): ReportMetrics {
     }
   }
 
-  return {
+  return metricsWithAiSatisfaction({
     totalSolicitacoes,
     totalRespostas,
     pendentes,
@@ -590,7 +623,7 @@ function buildMetrics(a: Analysis): ReportMetrics {
     topResponders,
     satisfacao: { muitoSatisfeito, satisfeito, neutro, insatisfeito, churnRisk },
     churnQuotes,
-  };
+  }, satisfaction);
 }
 
 // ============================================================
