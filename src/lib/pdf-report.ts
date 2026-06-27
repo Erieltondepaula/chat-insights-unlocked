@@ -1008,17 +1008,26 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = demandBlock(doc, d, margin, y, contentW);
   }
 
-  // ----- 3. Indicadores Visuais (gráficos) — fluxo natural; sem buffer agressivo
+  // ----- 3 + 5 juntos: mantém indicadores e satisfação no mesmo bloco visual
+  // sempre que couber em uma folha nova, evitando páginas quase vazias.
+  y = ensureGroupStart(
+    doc,
+    y,
+    estimateMetricsHeight(draft.metrics) + estimateSatisfactionHeight(doc, draft, contentW) + 74,
+    margin,
+  );
+
+  // ----- 3. Indicadores Visuais (gráficos)
   y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
   y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+
+  // ----- 5. Sentimentos e Satisfação — posicionado logo após os indicadores
+  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
+  y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
 
   // ----- 4. Análise do Atendimento (situação atual)
   y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
   y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 8;
-
-  // ----- 5. Sentimentos e Satisfação
-  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
-  y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
 
   // ----- 6. Conclusões e Recomendações (somente síntese + temas — sem repetir ações/pendências)
   y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
