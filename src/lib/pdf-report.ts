@@ -1440,6 +1440,31 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
 // ============================================================
 // CHARTS / METRICS RENDERER
 // ============================================================
+function barChartHeight(items: { name: string; count: number }[]): number {
+  return 26 + Math.max(items.length, 1) * 16 + 10;
+}
+
+function estimateMetricsHeight(m: ReportMetrics): number {
+  const barRowH = Math.max(barChartHeight(m.topRequesters), barChartHeight(m.topResponders));
+  const alertH = m.satisfacao.churnRisk > 0 || m.churnQuotes.length > 0
+    ? 26 + Math.min(m.churnQuotes.length, 3) * 12 + 18
+    : 0;
+  return 50 + 16 + barRowH + 10 + 110 + 10 + alertH;
+}
+
+function estimateSatisfactionHeight(doc: jsPDF, draft: ReportDraft, w: number): number {
+  const s = draft.satisfaction;
+  if (!s) return 62;
+  let h = Math.ceil(8 / 4) * (42 + 6) + 20;
+  if (s.executiveSummary) {
+    h += 14 + (doc.splitTextToSize(sanitize(s.executiveSummary), w) as string[]).length * 12 + 4;
+  }
+  if (s.mainReasons?.length) {
+    h += 14 + s.mainReasons.slice(0, 6).reduce((sum, r) => sum + Math.max(1, (doc.splitTextToSize(`• ${sanitize(r)}`, w) as string[]).length) * 12, 0);
+  }
+  return h;
+}
+
 function renderMetrics(
   doc: jsPDF,
   m: ReportMetrics,
@@ -1478,9 +1503,11 @@ function renderMetrics(
 
   // Two-column charts: Top solicitantes | Top respondentes
   const colW = (w - 14) / 2;
+  const barRowH = Math.max(barChartHeight(m.topRequesters), barChartHeight(m.topResponders));
+  y = ensureSpace(doc, y, barRowH + 4, x);
   let leftY = y;
   let rightY = y;
-  leftY = renderBarChart(doc, "Quem mais solicitou", m.topRequesters, x, leftY, colW);
+  leftY = renderBarChart(doc, "Quem mais solicitou", m.topRequesters, x, leftY, colW, true);
   rightY = renderBarChart(
     doc,
     "Quem mais respondeu",
@@ -1488,10 +1515,12 @@ function renderMetrics(
     x + colW + 14,
     rightY,
     colW,
+    true,
   );
   y = Math.max(leftY, rightY) + 10;
 
   // Pendência x Resolução (stacked bar) + Satisfação (donut-ish)
+  y = ensureSpace(doc, y, 114, x);
   leftY = renderStackBar(
     doc,
     "Pendência × Resolução",
@@ -1502,6 +1531,7 @@ function renderMetrics(
     x,
     y,
     colW,
+    true,
   );
   rightY = renderDonut(
     doc,
@@ -1516,6 +1546,7 @@ function renderMetrics(
     x + colW + 14,
     y,
     colW,
+    true,
   );
   y = Math.max(leftY, rightY) + 10;
 
@@ -1555,11 +1586,11 @@ function renderBarChart(
   x: number,
   y: number,
   w: number,
+  skipEnsure = false,
 ): number {
-  const rows = Math.max(items.length, 1);
   const rowH = 16;
-  const h = 26 + rows * rowH + 10;
-  y = ensureSpace(doc, y, h + 4, x);
+  const h = barChartHeight(items);
+  y = skipEnsure ? y : ensureSpace(doc, y, h + 4, x);
   doc.setDrawColor(...RULE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 3, 3, "FD");
@@ -1575,15 +1606,15 @@ function renderBarChart(
     return y + h;
   }
   const max = Math.max(...items.map((i) => i.count), 1);
-  const labelW = 70;
+  const labelW = Math.min(118, Math.max(82, w * 0.42));
   const barX = x + 10 + labelW;
-  const barMaxW = w - 20 - labelW - 30;
+  const barMaxW = Math.max(28, w - 20 - labelW - 30);
   let by = y + 30;
   for (const it of items) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.4);
     doc.setTextColor(...TEXT);
-    const label = (it.name || "—").slice(0, 14);
+    const label = doc.splitTextToSize(it.name || "—", labelW - 4)[0] ?? "—";
     doc.text(label, x + 10, by + 8);
     const bw = (it.count / max) * barMaxW;
     doc.setFillColor(...BLUE);
@@ -1603,9 +1634,10 @@ function renderStackBar(
   x: number,
   y: number,
   w: number,
+  skipEnsure = false,
 ): number {
   const h = 90;
-  y = ensureSpace(doc, y, h + 4, x);
+  y = skipEnsure ? y : ensureSpace(doc, y, h + 4, x);
   doc.setDrawColor(...RULE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 3, 3, "FD");
@@ -1647,9 +1679,10 @@ function renderDonut(
   x: number,
   y: number,
   w: number,
+  skipEnsure = false,
 ): number {
   const h = 110;
-  y = ensureSpace(doc, y, h + 4, x);
+  y = skipEnsure ? y : ensureSpace(doc, y, h + 4, x);
   doc.setDrawColor(...RULE);
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 3, 3, "FD");
@@ -1671,7 +1704,7 @@ function renderDonut(
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8.5);
     doc.setTextColor(...MUTED);
-    doc.text("Sem retorno do cliente.", x + 76, cy);
+    doc.text("Satisfação não conclusiva.", x + 76, cy);
     return y + h;
   }
 
