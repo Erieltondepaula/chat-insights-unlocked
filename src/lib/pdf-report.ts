@@ -1102,7 +1102,9 @@ function demandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number)
   // Se o card é grande demais para caber em uma página inteira, renderiza como
   // fluxo de parágrafos (sem moldura), permitindo quebra natural entre páginas
   // e evitando enormes espaços em branco.
-  if (!cardFitsOnFreshPage) {
+  const shouldFlowInsteadOfCard =
+    !cardFitsOnFreshPage || (cardH + 8 > availableNow && availableNow > pageInner * 0.22);
+  if (shouldFlowInsteadOfCard) {
     y = ensureSpace(doc, y, 24, x);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.6);
