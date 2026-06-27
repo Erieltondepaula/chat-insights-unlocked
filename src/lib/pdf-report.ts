@@ -1755,6 +1755,17 @@ function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): num
   return y;
 }
 
+function ensureGroupStart(doc: jsPDF, y: number, needed: number, margin: number): number {
+  const pageH = doc.internal.pageSize.getHeight();
+  const availableNow = pageH - 14 - y;
+  const freshPageSpace = pageH - 14 - margin;
+  if (needed <= freshPageSpace && needed > availableNow && y > margin + 18) {
+    doc.addPage();
+    return margin;
+  }
+  return y;
+}
+
 function lastY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 }
