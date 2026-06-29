@@ -100,11 +100,11 @@ function sanitize(input: string): string {
   if (!input) return "";
   let s = input;
 
-  // Correção Gramatical Unificada: Remove qualquer variação de "clienta"
+  // Correção gramatical secundária forçada
   s = s.replace(/clienta/gi, "cliente");
   s = s.replace(/Clienta/g, "Cliente");
 
-  // Remoção Absoluta de Emojis e Quebras de Encoding (Garante compatibilidade total com Helvetica)
+  // Expansão da blindagem de caracteres corrompidos e códigos quebrados
   s = s.replace(/\\?emptyset[^\s]*/gi, "");
   s = s.replace(/[Øø]=?[ßÝâá\d]*/g, "");
   s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
@@ -418,7 +418,7 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap, isL
   };
 }
 
-// CORREÇÃO VISUAL: Emojis removidos completamente da geração de strings para banir o lixo eletrônico (Ø=ßâ)
+// CORREÇÃO DE ENCODING: Removidos completamente os emojis de texto dos labels para banir o lixo eletrônico (Ø=ßâ)
 function categoryLabel(c: string): { emoji: string; label: string; color: [number, number, number] } {
   const clean = String(c).toLowerCase().trim();
   if (clean.includes("critico") || clean.includes("problema"))
@@ -454,7 +454,6 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
   const ar = draft.satisfaction?.auditReport;
   if (ar) {
-    // CORREÇÃO DE EMOJI HARDCODED: Modificado de "🟢 Estável / Controlado" para texto puro
     if (draft.metrics.pendentes === 0) {
       ar.health.label = "Estavel / Controlado";
       ar.health.justification =
@@ -496,7 +495,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     });
     y = (doc as any).lastAutoTable.finalY + 16;
 
-    // Seção 4: Comportamento do Suporte
+    // Seção 4: Comportamento do Suporte (FIXED: Removidos em definitivo os emojis que poluíam os cabeçalhos das sub-tabelas)
     y = sectionTitle(doc, "4. Auditoria Comportamental da Equipe de Suporte", margin, y);
     y = renderQuadrant(
       doc,
@@ -590,7 +589,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       y = (doc as any).lastAutoTable.finalY + 16;
     }
 
-    // TRADUÇÃO DE EMOJIS DA LINHA DO TEMPO: Converte ícones em tags textuais limpas para evitar quebras
+    // TRADUÇÃO DE EMOJIS DA LINHA DO TEMPO: Converte ícones em tags textuais limpas legíveis pela biblioteca de PDF
     if (ar.humorTimeline?.length) {
       y = ensureSpace(doc, y, 32, margin);
       doc.setFont("helvetica", "bold");
@@ -636,7 +635,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     if (draft.metrics.pendentes === 0 || !ar.churnSignals?.length) {
       y = paragraph(
         doc,
-        "Nenhum sinal ativo de risco de churn no encerramento deste periodo.",
+        "Nenhum sinal ativo de risco de churn no encerramento deste período.",
         margin,
         y,
         contentW,
