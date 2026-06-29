@@ -100,11 +100,11 @@ function sanitize(input: string): string {
   if (!input) return "";
   let s = input;
 
-  // CORREÇÃO GRAMATICAL: Força a substituição de qualquer resíduo do termo incorreto "clienta"
+  // Correção Gramatical Unificada: Remove qualquer variação de "clienta"
   s = s.replace(/clienta/gi, "cliente");
   s = s.replace(/Clienta/g, "Cliente");
 
-  // BLINDAGEM DE ENCODING: Remove expressões matemáticas corrompidas e resíduos de caracteres que quebram fontes padrão
+  // Remoção Absoluta de Emojis e Quebras de Encoding (Garante compatibilidade total com Helvetica)
   s = s.replace(/\\?emptyset[^\s]*/gi, "");
   s = s.replace(/[Øø]=?[ßÝâá\d]*/g, "");
   s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
@@ -418,18 +418,18 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap, isL
   };
 }
 
-// CORREÇÃO DE ENCODING: Removidos todos os emojis internos das tabelas para evitar os símbolos corrompidos (Ø=ßâ)
+// CORREÇÃO VISUAL: Emojis removidos completamente da geração de strings para banir o lixo eletrônico (Ø=ßâ)
 function categoryLabel(c: string): { emoji: string; label: string; color: [number, number, number] } {
   const clean = String(c).toLowerCase().trim();
   if (clean.includes("critico") || clean.includes("problema"))
-    return { emoji: "", label: "Problema Crítico", color: ALERT_BORDER };
-  if (clean.includes("duvida")) return { emoji: "", label: "Dúvida", color: [200, 150, 30] };
+    return { emoji: "", label: "Problema Critico", color: ALERT_BORDER };
+  if (clean.includes("duvida")) return { emoji: "", label: "Duvida", color: [200, 150, 30] };
   if (clean.includes("ajuste")) return { emoji: "", label: "Ajuste Realizado", color: [46, 139, 87] };
   if (clean.includes("configurac") || clean.includes("configura"))
-    return { emoji: "", label: "Configuração", color: BLUE };
+    return { emoji: "", label: "Configuracao", color: BLUE };
   if (clean.includes("orientac") || clean.includes("orienta"))
-    return { emoji: "", label: "Orientação", color: [120, 70, 160] };
-  return { emoji: "", label: "Informação", color: MUTED };
+    return { emoji: "", label: "Orientacao", color: [120, 70, 160] };
+  return { emoji: "", label: "Informacao", color: MUTED };
 }
 
 export function generatePdf(draft: ReportDraft): jsPDF {
@@ -454,18 +454,19 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
   const ar = draft.satisfaction?.auditReport;
   if (ar) {
+    // CORREÇÃO DE EMOJI HARDCODED: Modificado de "🟢 Estável / Controlado" para texto puro
     if (draft.metrics.pendentes === 0) {
-      ar.health.label = "Estável / Controlado";
+      ar.health.label = "Estavel / Controlado";
       ar.health.justification =
-        "Todas as demandas e pendências operacionais abertas pela clínica foram completamente sanadas pelo suporte técnico.";
+        "Todas as demandas e pendencias operacionais abertas pela clinica foram completamente sanadas pelo suporte tecnico.";
       ar.csat.classification = "Satisfeito";
     }
 
-    // Seção 2: Participantes
+    // Seção 2: Participantes (Higienizada com sanitize)
     y = sectionTitle(doc, "2. Mapeamento de Participantes da Jornada", margin, y);
     autoTable(doc, {
       startY: y,
-      head: [["Nome / Cargo", "Organização", "Atribuição Operacional"]],
+      head: [["Nome / Cargo", "Organizacao", "Atribuicao Operacional"]],
       body: ar.participants.map((p) => [sanitize(p.name), sanitize(p.org), sanitize(p.role)]),
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT },
@@ -473,14 +474,20 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     });
     y = (doc as any).lastAutoTable.finalY + 16;
 
-    // Seção 3: Linha do Tempo (FIXED: Removidos emojis geradores do bug Ø=ßâ)
+    // Seção 3: Linha do Tempo (Higienizada com sanitize em todas as células das colunas)
     y = sectionTitle(doc, "3. Linha do Tempo Operacional (Fatos Relevantes)", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Data", "Categoria", "Resumo do Fato", "Posicionamento do Suporte", "Status"]],
       body: ar.timeline.map((t) => {
         const c = categoryLabel(t.category);
-        return [t.date, c.label, sanitize(t.summary), sanitize(t.supportResponse), t.status];
+        return [
+          sanitize(t.date),
+          sanitize(c.label),
+          sanitize(t.summary),
+          sanitize(t.supportResponse),
+          sanitize(t.status),
+        ];
       }),
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
       styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT },
@@ -489,11 +496,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     });
     y = (doc as any).lastAutoTable.finalY + 16;
 
-    // Seção 4: Comportamento do Suporte (FIXED: Removidos os emojis hardcoded dos títulos que corrompiam a fonte Helvetica)
+    // Seção 4: Comportamento do Suporte
     y = sectionTitle(doc, "4. Auditoria Comportamental da Equipe de Suporte", margin, y);
     y = renderQuadrant(
       doc,
-      "Ações Resolutivas",
+      "Acoes Resolutivas",
       ar.supportBehavior?.resolutive ?? [],
       [46, 139, 87],
       margin,
@@ -502,7 +509,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
     y = renderQuadrant(
       doc,
-      "Defesas Técnicas Legítimas",
+      "Defesas Tecnicas Legitimas",
       ar.supportBehavior?.defenses ?? [],
       [200, 150, 30],
       margin,
@@ -511,7 +518,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
     y = renderQuadrant(
       doc,
-      "Limitações do Produto Declaradas",
+      "Limitacoes do Produto Declaradas",
       ar.supportBehavior?.limitations ?? [],
       BLUE,
       margin,
@@ -520,7 +527,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
     y = renderQuadrant(
       doc,
-      "Silêncios, Demoras e Gargalos",
+      "Silencios, Demoras e Gargalos",
       ar.supportBehavior?.silences ?? [],
       ALERT_BORDER,
       margin,
@@ -534,9 +541,9 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       startY: y,
       head: [["Indicador", "Quantidade"]],
       body: [
-        ["Ajustes / Configurações realizadas", String(ar.indicators?.ajustes ?? draft.metrics.resolvidas)],
-        ["Dúvidas sanadas", String(ar.indicators?.duvidas ?? 0)],
-        ["Bugs / Inconsistências reais do sistema", String(ar.indicators?.bugs ?? 0)],
+        ["Ajustes / Configuracoes realizadas", String(ar.indicators?.ajustes ?? draft.metrics.resolvidas)],
+        ["Duvidas sanadas", String(ar.indicators?.duvidas ?? 0)],
+        ["Bugs / Inconsistencias reais do sistema", String(ar.indicators?.bugs ?? 0)],
         ["Reaberturas / Problemas recorrentes", String(ar.indicators?.reaberturas ?? draft.metrics.pendentes)],
       ],
       headStyles: { fillColor: NAVY_DEEP },
@@ -546,14 +553,14 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = (doc as any).lastAutoTable.finalY + 16;
 
     // Seção 6: Saúde, Evolução e Esforço
-    y = sectionTitle(doc, "6. Saúde, Evolução e Esforço", margin, y);
+    y = sectionTitle(doc, "6. Saude, Evolucao e Esforco", margin, y);
     autoTable(doc, {
       startY: y,
-      head: [["Indicador", "Classificação", "Justificativa"]],
+      head: [["Indicador", "Classificacao", "Justificativa"]],
       body: [
-        ["Saúde do Atendimento", ar.health?.label, ar.health?.justification],
-        ["Evolução do Humor", ar.humorEvolution?.label, ar.humorEvolution?.justification],
-        ["Nível de Esforço do Cliente", ar.effort?.label, ar.effort?.detail],
+        ["Saude do Atendimento", sanitize(ar.health?.label), sanitize(ar.health?.justification)],
+        ["Evolucao do Humor", sanitize(ar.humorEvolution?.label), sanitize(ar.humorEvolution?.justification)],
+        ["Nivel de Esforco do Cliente", sanitize(ar.effort?.label), sanitize(ar.effort?.detail)],
       ],
       headStyles: { fillColor: NAVY_DEEP },
       styles: { fontSize: 9, valign: "top" },
@@ -567,11 +574,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       y = sectionTitle(doc, "7. Mapeamento Emocional do Cliente", margin, y);
       autoTable(doc, {
         startY: y,
-        head: [["Emoção", "Confiança", "Data", "Mensagem do Cliente", "Motivo"]],
+        head: [["Emocao", "Confianca", "Data", "Mensagem do Cliente", "Motivo"]],
         body: ar.emotionalMoments.map((m) => [
-          m.emotion,
+          sanitize(m.emotion),
           `${m.confidence}%`,
-          m.date,
+          sanitize(m.date),
           `"${sanitize(m.quote)}"`,
           sanitize(m.motive),
         ]),
@@ -583,8 +590,40 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       y = (doc as any).lastAutoTable.finalY + 16;
     }
 
+    // TRADUÇÃO DE EMOJIS DA LINHA DO TEMPO: Converte ícones em tags textuais limpas para evitar quebras
+    if (ar.humorTimeline?.length) {
+      y = ensureSpace(doc, y, 32, margin);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...NAVY);
+      doc.text("Linha do Tempo do Humor:", margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...TEXT);
+      const emojiToText = (em: string) => {
+        const cleanEm = em.trim();
+        if (cleanEm === "😊" || cleanEm === "🙂") return "[Satisfeito]";
+        if (cleanEm === "😐") return "[Neutro]";
+        if (cleanEm === "😠" || cleanEm === "😡") return "[Frustrado]";
+        if (cleanEm === "😟") return "[Preocupado]";
+        return "";
+      };
+      const line = ar.humorTimeline
+        .map((h) => `${sanitize(h.date)} ${emojiToText(h.emoji)}`)
+        .filter((l) => l.trim().length > 5)
+        .join("   ->   ");
+      const wrapped = doc.splitTextToSize(line, contentW) as string[];
+      for (const ln of wrapped) {
+        y = ensureSpace(doc, y, 12, margin);
+        doc.text(ln, margin, y);
+        y += 12;
+      }
+      y += 6;
+    }
+
     // Seção 8: CSAT Analítico
-    y = sectionTitle(doc, "8. Score de Satisfação do Cliente (CSAT Analítico)", margin, y);
+    y = sectionTitle(doc, "8. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
     doc.setFillColor(...INFO_BG);
     doc.roundedRect(margin, y, contentW, 40, 4, 4, "F");
     doc.setFont("helvetica", "bold");
@@ -593,11 +632,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y += 55;
 
     // Seção 9: Churn
-    y = sectionTitle(doc, "9. Detecção e Evidenciação do Alerta de Risco de Churn", margin, y);
+    y = sectionTitle(doc, "9. Deteccao e Evidenciacao do Alerta de Risco de Churn", margin, y);
     if (draft.metrics.pendentes === 0 || !ar.churnSignals?.length) {
       y = paragraph(
         doc,
-        "Nenhum sinal ativo de risco de churn no encerramento deste período.",
+        "Nenhum sinal ativo de risco de churn no encerramento deste periodo.",
         margin,
         y,
         contentW,
@@ -611,7 +650,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.setTextColor(...ALERT_BORDER);
-        doc.text(`Sinal #${idx + 1} [Peso ${s.weight}] — Data: ${s.date}`, margin + 10, y + 15);
+        doc.text(`Sinal #${idx + 1} [Peso ${sanitize(s.weight)}] — Data: ${sanitize(s.date)}`, margin + 10, y + 15);
         doc.setFont("helvetica", "normal");
         doc.text(`Mensagem: "${sanitize(s.quote)}"`, margin + 10, y + 30);
         y += 55;
@@ -619,9 +658,9 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
 
     // Seção 10: Diagnóstico e Melhorias
-    y = sectionTitle(doc, "10. Diagnóstico Final e Oportunidades de Melhoria", margin, y);
+    y = sectionTitle(doc, "10. Diagnostico Final e Oportunidades de Melhoria", margin, y);
     y = renderListBox(doc, "Pontos Positivos Identificados", ar.diagnosis?.strengths ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Pontos de Atenção Críticos", ar.diagnosis?.attentionPoints ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Pontos de Atencao Criticos", ar.diagnosis?.attentionPoints ?? [], margin, y, contentW);
     y = renderListBox(
       doc,
       "Melhorias Sugeridas para o Produto",
@@ -632,11 +671,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
 
     // Seção 11: Resumo Executivo e Próximos Passos
-    y = sectionTitle(doc, "11. Resumo Executivo e Conclusão", margin, y);
+    y = sectionTitle(doc, "11. Resumo Executivo e Conclusao", margin, y);
     y = renderListBox(
       doc,
-      "Plano de Ação e Próximos Passos",
-      ar.conclusion?.nextSteps?.map((s) => `${s.action} (Responsável: ${s.owner})`) ?? [],
+      "Plano de Acao e Proximos Passos",
+      ar.conclusion?.nextSteps?.map((s) => `${sanitize(s.action)} (Responsavel: ${sanitize(s.owner)})`) ?? [],
       margin,
       y,
       contentW,
@@ -679,7 +718,7 @@ function renderQuadrant(
   doc.setFontSize(8.5);
   doc.setTextColor(...TEXT);
   let ly = y + 26;
-  if (!lines.length) doc.text("• Sem ocorrências documentadas.", x + 8, ly);
+  if (!lines.length) doc.text("• Sem ocorrencias documentadas.", x + 8, ly);
   lines.forEach((ln) => {
     doc.text(ln, x + 8, ly);
     ly += 11;
@@ -698,7 +737,7 @@ function renderListBox(doc: jsPDF, title: string, items: string[], x: number, y:
   doc.setFontSize(9);
   doc.setTextColor(...TEXT);
   if (!items.length) {
-    doc.text("• Nenhuma sugestão/registro mapeado.", x, y);
+    doc.text("• Nenhuma sugestao/registro mapeado.", x, y);
     y += 12;
   }
   items.forEach((it) => {
@@ -746,5 +785,5 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
 }
 
 function inferThemes(a: Analysis): string[] {
-  return ["Ajustes de Fluxo e Validação Operacional"];
+  return ["Ajustes de Fluxo e Validacao Operacional"];
 }
