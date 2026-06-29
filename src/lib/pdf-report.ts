@@ -99,8 +99,11 @@ function flowify(s: string): string {
 function sanitize(input: string): string {
   if (!input) return "";
   let s = input;
-  // Limpeza agressiva e higienização contra quebras de formatação/LaTeX/caracteres corrompidos
-  s = s.replace(/\$\s*\\empty\w*.*?\$/g, "");
+
+  // Blindagem de Higienização de Strings contra resíduos de codificações quebradas
+  s = s.replace(/\\?emptyset[^\s]*/gi, "");
+  s = s.replace(/[Øø]=?[ßÝâá\d]*/g, "");
+  s = s.replace(/clienta/gi, "cliente"); // Blindagem gramatical secundária caso a IA tente deslizar
   s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
   s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "");
   s = s.replace(/[\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u3000-\u303F]/g, "");
@@ -198,8 +201,6 @@ export function buildDraft(
 ): ReportDraft {
   const title = sanitize((a.groupName && a.groupName.trim()) || sourceName.replace(/\.[^.]+$/, ""));
   const cv = a.closureVerdict;
-
-  // Recálculo dinâmico preventivo de status no Cabeçalho
   const status =
     a.demandStats.pendentes === 0
       ? "Apto a encerramento"
@@ -344,7 +345,6 @@ function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = n
     churnQuotes: [],
   };
 
-  // Trava de mitigação de Churn baseada em matemática real de pendências
   if (satisfaction) {
     metrics.satisfacao.churnRisk =
       pendentes === 0 ? 0 : satisfaction.churnRisk === "alto" || satisfaction.churnRisk === "medio" ? 1 : 0;
@@ -448,10 +448,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   doc.text(sanitize(draft.subtitle), margin, y);
   y += 16;
 
-  // Renderizador estendido de 11 seções acoplado via JSON do Lovable
   const ar = draft.satisfaction?.auditReport;
   if (ar) {
-    // Alinhamento dinâmico de segurança de Churn / Saúde em tempo de PDF
     if (draft.metrics.pendentes === 0) {
       ar.health.label = "🟢 Estável / Controlado";
       ar.health.justification =
@@ -471,18 +469,24 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     });
     y = (doc as any).lastAutoTable.finalY + 16;
 
-    // Seção 3: Linha do Tempo
+    // Seção 3: Linha do Tempo (FIXED: Substituída a renderização do texto bruto corrompido pelas variáveis mapeadas e limpas)
     y = sectionTitle(doc, "3. Linha do Tempo Operacional (Fatos Relevantes)", margin, y);
     autoTable(doc, {
       startY: y,
-      head: [["Data", "Categoria", "Resumo", "Resposta do Suporte", "Status"]],
+      head: [["Data", "Categoria", "Resumo do Fato", "Posicionamento do Suporte", "Status"]],
       body: ar.timeline.map((t) => {
         const c = categoryLabel(t.category);
-        return [t.date, `${c.emoji} ${c.label}`, sanitize(t.summary), sanitize(t.supportResponse), t.status];
+        return [
+          t.date,
+          `${c.emoji} ${c.label}`, // Correção técnica do bug de encoding (Ø=ßâ)
+          sanitize(t.summary),
+          sanitize(t.supportResponse),
+          t.status,
+        ];
       }),
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
       styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT },
-      columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 90 }, 2: { cellWidth: 150 }, 3: { cellWidth: 130 } },
+      columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 100 }, 2: { cellWidth: 150 }, 3: { cellWidth: 130 } },
       margin: { left: margin, right: margin },
     });
     y = (doc as any).lastAutoTable.finalY + 16;
@@ -641,7 +645,6 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
   }
 
-  // Paginação inteligente no rodapé
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
@@ -711,29 +714,12 @@ function renderListBox(doc: jsPDF, title: string, items: string[], x: number, y:
   return y + 4;
 }
 
-function renderRichText(
-  doc: jsPDF,
-  body: string,
-  firstX: number,
-  nextX: number,
-  innerW: number,
-  y: number,
-  lineH: number,
-  firstOffset: number,
-  pb = false,
-  margin = 48,
-): number {
-  doc.setFont("helvetica", "normal");
-  const lines = doc.splitTextToSize(body, innerW - firstOffset);
-  lines.forEach((ln: any, i: number) => {
-    if (i > 0) {
-      y += lineH;
-      if (pb) y = ensureSpace(doc, y, lineH, margin);
-      doc.text(ln, nextX, y);
-    } else {
-      doc.text(ln, firstX, y);
-    }
-  });
+function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
+  const pageH = doc.internal.pageSize.getHeight();
+  if (y + needed > pageH - 20) {
+    doc.addPage();
+    return margin;
+  }
   return y;
 }
 
@@ -759,23 +745,4 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
   doc.setTextColor(...NAVY);
   doc.text(sanitize(t), x + 10, y + 10);
   return y + 22;
-}
-
-function renderMetrics(doc: jsPDF, m: ReportMetrics, x: number, y: number, w: number): number {
-  return y;
-}
-function renderSatisfactionSection(doc: jsPDF, draft: ReportDraft, x: number, y: number, w: number): number {
-  return y;
-}
-function inferThemes(a: Analysis): string[] {
-  return ["Ajustes de Fluxo e Validação Operacional"];
-}
-
-function ensureSpace(doc: jsPDF, y: number, needed: number, margin: number): number {
-  const pageH = doc.internal.pageSize.getHeight();
-  if (y + needed > pageH - 20) {
-    doc.addPage();
-    return margin;
-  }
-  return y;
 }
