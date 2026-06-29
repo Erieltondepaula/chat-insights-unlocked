@@ -100,10 +100,13 @@ function sanitize(input: string): string {
   if (!input) return "";
   let s = input;
 
-  // Blindagem de Higienização de Strings contra resíduos de codificações quebradas
+  // CORREÇÃO GRAMATICAL: Força a substituição de qualquer resíduo do termo incorreto "clienta"
+  s = s.replace(/clienta/gi, "cliente");
+  s = s.replace(/Clienta/g, "Cliente");
+
+  // BLINDAGEM DE ENCODING: Remove expressões matemáticas corrompidas e resíduos de caracteres que quebram fontes padrão
   s = s.replace(/\\?emptyset[^\s]*/gi, "");
   s = s.replace(/[Øø]=?[ßÝâá\d]*/g, "");
-  s = s.replace(/clienta/gi, "cliente"); // Blindagem gramatical secundária caso a IA tente deslizar
   s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
   s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "");
   s = s.replace(/[\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u3000-\u303F]/g, "");
@@ -415,17 +418,18 @@ function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap, isL
   };
 }
 
+// CORREÇÃO DE ENCODING: Removidos todos os emojis internos das tabelas para evitar os símbolos corrompidos (Ø=ßâ)
 function categoryLabel(c: string): { emoji: string; label: string; color: [number, number, number] } {
   const clean = String(c).toLowerCase().trim();
   if (clean.includes("critico") || clean.includes("problema"))
-    return { emoji: "🔴", label: "Problema Crítico", color: ALERT_BORDER };
-  if (clean.includes("duvida")) return { emoji: "🟡", label: "Dúvida", color: [200, 150, 30] };
-  if (clean.includes("ajuste")) return { emoji: "🟢", label: "Ajuste Realizado", color: [46, 139, 87] };
+    return { emoji: "", label: "Problema Crítico", color: ALERT_BORDER };
+  if (clean.includes("duvida")) return { emoji: "", label: "Dúvida", color: [200, 150, 30] };
+  if (clean.includes("ajuste")) return { emoji: "", label: "Ajuste Realizado", color: [46, 139, 87] };
   if (clean.includes("configurac") || clean.includes("configura"))
-    return { emoji: "🔵", label: "Configuração", color: BLUE };
+    return { emoji: "", label: "Configuração", color: BLUE };
   if (clean.includes("orientac") || clean.includes("orienta"))
-    return { emoji: "🟣", label: "Orientação", color: [120, 70, 160] };
-  return { emoji: "⚪", label: "Informação", color: MUTED };
+    return { emoji: "", label: "Orientação", color: [120, 70, 160] };
+  return { emoji: "", label: "Informação", color: MUTED };
 }
 
 export function generatePdf(draft: ReportDraft): jsPDF {
@@ -451,7 +455,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   const ar = draft.satisfaction?.auditReport;
   if (ar) {
     if (draft.metrics.pendentes === 0) {
-      ar.health.label = "🟢 Estável / Controlado";
+      ar.health.label = "Estável / Controlado";
       ar.health.justification =
         "Todas as demandas e pendências operacionais abertas pela clínica foram completamente sanadas pelo suporte técnico.";
       ar.csat.classification = "Satisfeito";
@@ -469,20 +473,14 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     });
     y = (doc as any).lastAutoTable.finalY + 16;
 
-    // Seção 3: Linha do Tempo (FIXED: Substituída a renderização do texto bruto corrompido pelas variáveis mapeadas e limpas)
+    // Seção 3: Linha do Tempo (FIXED: Removidos emojis geradores do bug Ø=ßâ)
     y = sectionTitle(doc, "3. Linha do Tempo Operacional (Fatos Relevantes)", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Data", "Categoria", "Resumo do Fato", "Posicionamento do Suporte", "Status"]],
       body: ar.timeline.map((t) => {
         const c = categoryLabel(t.category);
-        return [
-          t.date,
-          `${c.emoji} ${c.label}`, // Correção técnica do bug de encoding (Ø=ßâ)
-          sanitize(t.summary),
-          sanitize(t.supportResponse),
-          t.status,
-        ];
+        return [t.date, c.label, sanitize(t.summary), sanitize(t.supportResponse), t.status];
       }),
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
       styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT },
@@ -491,11 +489,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     });
     y = (doc as any).lastAutoTable.finalY + 16;
 
-    // Seção 4: Comportamento do Suporte
+    // Seção 4: Comportamento do Suporte (FIXED: Removidos os emojis hardcoded dos títulos que corrompiam a fonte Helvetica)
     y = sectionTitle(doc, "4. Auditoria Comportamental da Equipe de Suporte", margin, y);
     y = renderQuadrant(
       doc,
-      "🟢 Ações Resolutivas",
+      "Ações Resolutivas",
       ar.supportBehavior?.resolutive ?? [],
       [46, 139, 87],
       margin,
@@ -504,7 +502,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
     y = renderQuadrant(
       doc,
-      "🟡 Defesas Técnicas Legítimas",
+      "Defesas Técnicas Legítimas",
       ar.supportBehavior?.defenses ?? [],
       [200, 150, 30],
       margin,
@@ -513,7 +511,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
     y = renderQuadrant(
       doc,
-      "🔵 Limitações do Produto Declaradas",
+      "Limitações do Produto Declaradas",
       ar.supportBehavior?.limitations ?? [],
       BLUE,
       margin,
@@ -522,7 +520,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     );
     y = renderQuadrant(
       doc,
-      "🔴 Silêncios, Demoras e Gargalos",
+      "Silêncios, Demoras e Gargalos",
       ar.supportBehavior?.silences ?? [],
       ALERT_BORDER,
       margin,
@@ -745,4 +743,8 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
   doc.setTextColor(...NAVY);
   doc.text(sanitize(t), x + 10, y + 10);
   return y + 22;
+}
+
+function inferThemes(a: Analysis): string[] {
+  return ["Ajustes de Fluxo e Validação Operacional"];
 }
