@@ -122,17 +122,19 @@ export const analyzeSatisfaction = createServerFn({ method: "POST" })
     if (!apiKey) return null;
 
     const suffix = data.clientGender;
-    const clienteRef = `${suffix === "a" ? "a" : "o"} client${suffix}`;
+    // CORREÇÃO GRAMATICAL: "Cliente" é substantivo uniforme de dois gêneros. Removido o termo incorreto "clienta".
+    const clienteRef = `${suffix === "a" ? "a" : "o"} cliente`;
 
     const sys = `Você é um ANALISTA SÊNIOR de Customer Success, Qualidade e Auditoria de Atendimento. Analisa logs de WhatsApp de suporte como UMA jornada única.
 
 REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
-1. PROIBIÇÃO DE CARACTERES CORROMPIDOS: É terminantemente proibido gerar símbolos matemáticos ou codificações corrompidas (como $\\emptyset=\\dot{Y}4$, !', &ª) no JSON. No campo 'category' use estritamente uma destas strings: "critico", "duvida", "ajuste", "configuracao", "orientacao" ou "info".
-2. FIM DO VÍCIO DE PADRÃO: Avalie a saúde com base em fatos atuais. Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "🟢 Excelente" ou "🟡 Atenção/Estabilizado" (nunca "Crítico" se tudo já foi resolvido). O Risco de Churn deve cair proporcionalmente se as soluções foram definitivas.
-3. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...", "vale ressaltar" ou "de forma cronológica". Escreva resumos e narrativas de forma fluida, natural, humana e executiva.
-4. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
-5. CITAÇÕES GATILHO: Toda análise de sentimento ou risco de churn deve ser ancorada na frase exata (ipsis litteris) enviada pelo cliente e na respectiva data.
-6. Referências ao cliente devem usar o gênero correto de acordo com: "${clienteRef}".
+1. PROIBIÇÃO DE CARACTERES CORROMPIDOS: É terminantemente proibido gerar símbolos matemáticos ou codificações corrompidas (como $\\emptyset=\\dot{Y}4$, !', &ª) no JSON. No campo 'category' use estritamente uma destas strings em caixa baixa: "critico", "duvida", "ajuste", "configuracao", "orientacao" ou "info".
+2. REGRA GRAMATICAL OBRIGATÓRIA: O substantivo "cliente" é uniforme. Use sempre "a cliente" ou "o cliente". É terminantemente PROIBIDO produzir ou inventar o termo incorreto "clienta" em qualquer parte do relatório ou das tabelas.
+3. FIM DO VÍCIO DE PADRÃO: Avalie a saúde com base em fatos atuais. Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "🟢 Excelente" ou "🟡 Atenção/Estabilizado" (nunca "Crítico" se tudo já foi resolvido). O Risco de Churn deve cair proporcionalmente se as soluções foram definitivas.
+4. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...", "vale ressaltar" ou "de forma cronológica". Escreva resumos e narrativas de forma fluida, natural, humana e executiva.
+5. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
+6. CITAÇÕES GATILHO: Toda análise de sentimento ou risco de churn deve ser ancorada na frase exata (ipsis litteris) enviada pelo cliente e na respectiva data.
+7. Referências ao cliente devem usar o gênero correto de acordo com o padrão formal: "${clienteRef}".
 
 SAÍDA: Retorne APENAS o objeto JSON puro e perfeitamente válido, sem blocos de markdown (\`\`\`json).`;
 
@@ -210,7 +212,7 @@ Retorne o JSON seguindo fielmente este formato:
         method: "POST",
         headers: { "content-type": "application/json", "Lovable-API-Key": apiKey },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash", // Mudança estratégica do modelo Pro para o Flash (Velocidade e resposta instantânea)
+          model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: sys },
             { role: "user", content: userMsg },
