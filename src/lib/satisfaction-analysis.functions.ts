@@ -3,20 +3,14 @@ import { z } from "zod";
 
 export type TimelineEvent = {
   date: string; // DD/MM/AAAA
-  category:
-    | "critico"
-    | "duvida"
-    | "ajuste"
-    | "configuracao"
-    | "orientacao"
-    | "info";
+  category: "critico" | "duvida" | "ajuste" | "configuracao" | "orientacao" | "info";
   summary: string;
   supportResponse: string;
   status: "Resolvido" | "Pendente" | "Em análise";
 };
 
 export type ParticipantEntry = {
-  name: string; // never phone numbers — role+name from conversation
+  name: string;
   org: string;
   role: string;
 };
@@ -88,12 +82,7 @@ export type AuditReport = {
 };
 
 export type SatisfactionAnalysis = {
-  sentiment:
-    | "muito_satisfeito"
-    | "satisfeito"
-    | "neutro"
-    | "insatisfeito"
-    | "muito_insatisfeito";
+  sentiment: "muito_satisfeito" | "satisfeito" | "neutro" | "insatisfeito" | "muito_insatisfeito";
   score: number;
   confidence: number;
   emotion: string;
@@ -135,20 +124,17 @@ export const analyzeSatisfaction = createServerFn({ method: "POST" })
     const suffix = data.clientGender;
     const clienteRef = `${suffix === "a" ? "a" : "o"} client${suffix}`;
 
-    const sys = `Você é um ANALISTA SÊNIOR de Customer Success, Qualidade e Auditoria de Atendimento. Analisa logs de WhatsApp de suporte (texto, OCR de imagens, transcrições de áudio/vídeo, documentos) como UMA jornada única.
+    const sys = `Você é um ANALISTA SÊNIOR de Customer Success, Qualidade e Auditoria de Atendimento. Analisa logs de WhatsApp de suporte como UMA jornada única.
 
-REGRAS CRÍTICAS:
-- Escreva como auditor humano: direto, natural, profissional. PROIBIDO usar jargões da IA ("O contato reforça a necessidade de...", "A tratativa segue acompanhada por...", "vale ressaltar", "de forma cronológica e documentada").
-- NUNCA exiba números de telefone (+55...). Substitua pelo nome/cargo identificado na conversa (ex: "Dra. Luciana / Diretora", "Tatiele / Recepção"). Se realmente não há nome, use "Recepção" ou "Solicitante 1".
-- CRONOLOGIA IMUTÁVEL: ordem estritamente linear, sem misturar datas passadas dentro de blocos futuros.
-- Faixa temporal: analise TODO o histórico fornecido — não ignore os primeiros dias.
-- Citações: TODA emoção, churn, frustração precisa trazer a frase EXATA do cliente (ipsis litteris) e a DATA.
-- Referências ao cliente devem usar gênero correto: "${clienteRef}".
-- Citação direta entre aspas duplas: "...". Assunto paralelo entre parênteses: (...). Comentário do auditor entre colchetes: [...].
-- Para destaque interno (negrito automático no PDF) coloque nomes próprios, datas, status ou números em CAIXA ALTA quando crítico.
-- "consolidatedSummary": 4-5 parágrafos fluidos, narrativa cronológica (início, desenvolvimento, conclusão), tom técnico-executivo. SEM jargão da IA.
+REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
+1. PROIBIÇÃO DE CARACTERES CORROMPIDOS: É terminantemente proibido gerar símbolos matemáticos ou codificações corrompidas (como $\\emptyset=\\dot{Y}4$, !', &ª) no JSON. No campo 'category' use estritamente uma destas strings: "critico", "duvida", "ajuste", "configuracao", "orientacao" ou "info".
+2. FIM DO VÍCIO DE PADRÃO: Avalie a saúde com base em fatos atuais. Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "🟢 Excelente" ou "🟡 Atenção/Estabilizado" (nunca "Crítico" se tudo já foi resolvido). O Risco de Churn deve cair proporcionalmente se as soluções foram definitivas.
+3. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...", "vale ressaltar" ou "de forma cronológica". Escreva resumos e narrativas de forma fluida, natural, humana e executiva.
+4. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
+5. CITAÇÕES GATILHO: Toda análise de sentimento ou risco de churn deve ser ancorada na frase exata (ipsis litteris) enviada pelo cliente e na respectiva data.
+6. Referências ao cliente devem usar o gênero correto de acordo com: "${clienteRef}".
 
-SAÍDA: APENAS JSON válido, sem markdown.`;
+SAÍDA: Retorne APENAS o objeto JSON puro e perfeitamente válido, sem blocos de markdown (\`\`\`json).`;
 
     const userMsg = `CLIENTE: ${data.clientName || "(não informado)"} — referência: ${clienteRef}
 PERÍODO: ${data.stats.firstDate ?? "—"} a ${data.stats.lastDate ?? "—"}
@@ -161,7 +147,7 @@ ${data.attachmentInsights.length ? data.attachmentInsights.map((s, i) => `[${i +
 CONVERSA (texto integral, cronológica):
 ${data.conversationText.slice(0, 40000)}
 
-Retorne JSON com este schema EXATO:
+Retorne o JSON seguindo fielmente este formato:
 {
   "sentiment": "muito_satisfeito|satisfeito|neutro|insatisfeito|muito_insatisfeito",
   "score": 0-100,
@@ -174,17 +160,17 @@ Retorne JSON com este schema EXATO:
   "repeatedRequestsCount": number,
   "humanInterventionNeeded": boolean,
   "churnRisk": "baixo|medio|alto",
-  "mainReasons": ["3 a 6 motivos curtos"],
-  "executiveSummary": "2-3 frases objetivas",
-  "consolidatedSummary": "P1\\n\\nP2\\n\\nP3\\n\\nP4\\n\\nP5",
+  "mainReasons": ["motivos curtos e objetivos"],
+  "executiveSummary": "frases gerenciais e realistas",
+  "consolidatedSummary": "P1\\n\\nP2\\n\\nP3",
   "auditReport": {
-    "participants": [{"name":"Nome ou Cargo","org":"Clínica X | Amigo Flow","role":"Solicitante Principal | Analista de Implantação | Recepção | Diretora"}],
-    "timeline": [{"date":"DD/MM/AAAA","category":"critico|duvida|ajuste|configuracao|orientacao|info","summary":"resumo curto e natural","supportResponse":"o que a equipe respondeu/executou","status":"Resolvido|Pendente|Em análise"}],
+    "participants": [{"name":"Nome/Cargo Limpo","org":"Organização","role":"Atribuição Real"}],
+    "timeline": [{"date":"DD/MM/AAAA","category":"critico|duvida|ajuste|configuracao|orientacao|info","summary":"resumo natural","supportResponse":"ação técnica real","status":"Resolvido|Pendente|Em análise"}],
     "supportBehavior": {
-      "resolutive": ["parametrizações e correções ágeis"],
-      "defenses": ["momentos onde suporte provou via logs/prints que erro foi operacional interno do cliente"],
-      "limitations": ["travas nativas do produto declaradas com transparência"],
-      "silences": ["dias sem resposta, loops longos, dependência excessiva de envio de link"]
+      "resolutive": ["parametrizações e correções rápidas documentadas"],
+      "defenses": ["casos onde o suporte provou que o erro foi operacional da clínica"],
+      "limitations": ["limitações nativas do produto alinhadas de forma clara"],
+      "silences": ["omissões, demoras ou cobranças do cliente deixadas no vácuo"]
     },
     "indicators": {
       "ajustes": number,
@@ -192,29 +178,29 @@ Retorne JSON com este schema EXATO:
       "orientacoes": number,
       "bugs": number,
       "reaberturas": number,
-      "topErrors": ["temas mais reincidentes"]
+      "topErrors": ["erros reincidentes"]
     },
-    "health": {"label":"🟢 Excelente|🟡 Atenção|🔴 Crítico","justification":"2 frases"},
-    "humorEvolution": {"label":"⬆ Melhorando|➡ Estável|⬇ Piorando","justification":"justificativa"},
+    "health": {"label":"🟢 Excelente|🟡 Atenção|🔴 Crítico","justification":"Justificativa baseada nas pendências atuais"},
+    "humorEvolution": {"label":"⬆ Melhorando|➡ Estável|⬇ Piorando","justification":"Razão real"},
     "complexity": {"label":"Baixa|Média|Alta|Muito Alta","motive":"motivo"},
-    "effort": {"label":"Baixo|Médio|Alto|Muito Alto","detail":"detalhar retrabalhos manuais por causa do sistema"},
-    "emotionalMoments": [{"emotion":"Satisfação|Insatisfação|Frustração|Confiança|Ansiedade|Urgência","confidence":0-100,"quote":"citação literal","date":"DD/MM/AAAA","motive":"contexto"}],
-    "humorTimeline": [{"date":"DD/MM","emoji":"😊|😐|😠|😟|😡|🙂"}],
-    "csat": {"score":0-100,"classification":"Muito Satisfeito|Satisfeito|Neutro|Insatisfeito|Muito Insatisfeito","calculationMemo":"justificativa qualitativa+quantitativa que determinou a nota"},
-    "churnSignals": [{"weight":"Baixo|Médio|Alto","date":"DD/MM/AAAA","quote":"texto idêntico enviado pelo cliente","impact":"por que essa fala coloca o contrato em risco"}],
+    "effort": {"label":"Baixo|Médio|Alto|Muito Alto","detail":"detalhe qualitativo dos retrabalhos"},
+    "emotionalMoments": [{"emotion":"Satisfação|Insatisfação|Frustração|Confiança|Ansiedade|Urgência","confidence":100,"quote":"frase exata","date":"DD/MM/AAAA","motive":"contexto"}],
+    "humorTimeline": [{"date":"DD/MM","emoji":"😊|😐|😠"}],
+    "csat": {"score":100,"classification":"Classificação","calculationMemo":"Memória analítica fundamentada"},
+    "churnSignals": [{"weight":"Baixo|Médio|Alto","date":"DD/MM/AAAA","quote":"frase exata do cliente","impact":"impacto contratual real"}],
     "diagnosis": {
-      "strengths": ["boas posturas e resoluções eficientes"],
-      "attentionPoints": ["retrabalhos, configurações incompletas, falhas sistêmicas"],
+      "strengths": ["pontos fortes do suporte"],
+      "attentionPoints": ["pontos de atrito sistêmico"],
       "opportunities": {
-        "product": ["o que o software precisa passar a fazer nativamente"],
-        "support": ["como os analistas podem melhorar tempo/proatividade"],
-        "process": ["alinhamentos ou treinamentos operacionais para o cliente"]
+        "product": ["melhorias de software nativas"],
+        "support": ["melhorias de proatividade do time"],
+        "process": ["treinamentos sugeridos para o cliente"]
       }
     },
     "conclusion": {
-      "willChurn": "Sim/Não + justificativa direta com evidência",
-      "isEvolvingMaturity": "diagnóstico: evoluindo ou apenas paliativo? Justificar",
-      "nextSteps": [{"action":"passo prático imediato","owner":"responsável (papel/equipe)"}]
+      "willChurn": "Análise preditiva explícita",
+      "isEvolvingMaturity": "Avaliação de maturidade real",
+      "nextSteps": [{"action":"ação imediata","owner":"responsável"}]
     }
   }
 }`;
@@ -224,12 +210,12 @@ Retorne JSON com este schema EXATO:
         method: "POST",
         headers: { "content-type": "application/json", "Lovable-API-Key": apiKey },
         body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
+          model: "google/gemini-2.5-flash", // Mudança estratégica do modelo Pro para o Flash (Velocidade e resposta instantânea)
           messages: [
             { role: "system", content: sys },
             { role: "user", content: userMsg },
           ],
-          temperature: 0.2,
+          temperature: 0.1,
         }),
       });
       if (!resp.ok) return null;
@@ -237,6 +223,7 @@ Retorne JSON com este schema EXATO:
       const raw = json.choices?.[0]?.message?.content ?? "";
       const clean = raw.replace(/^```json\s*|\s*```$/g, "").trim();
       const parsed = JSON.parse(clean) as SatisfactionAnalysis;
+
       parsed.mainReasons = Array.isArray(parsed.mainReasons) ? parsed.mainReasons.slice(0, 6) : [];
       parsed.score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
       parsed.confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
