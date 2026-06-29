@@ -2,16 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
-import {
-  analyzeSatisfaction,
-  type SatisfactionAnalysis,
-} from "@/lib/satisfaction-analysis.functions";
-import {
-  buildDraft,
-  generatePdf,
-  type AttachmentInsight,
-  type ReportDraft,
-} from "@/lib/pdf-report";
+import { analyzeSatisfaction, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
+import { buildDraft, generatePdf, type AttachmentInsight, type ReportDraft } from "@/lib/pdf-report";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -19,8 +11,7 @@ export const Route = createFileRoute("/")({
       { title: "Análise de Conversa WhatsApp – Relatório em PDF" },
       {
         name: "description",
-        content:
-          "Envie a exportação do WhatsApp e gere um relatório técnico enxuto e editável em PDF.",
+        content: "Envie a exportação do WhatsApp e gere um relatório técnico enxuto e editável em PDF.",
       },
     ],
   }),
@@ -64,8 +55,7 @@ async function fileToBase64(file: File): Promise<string> {
 
 function fallbackMime(name: string, kind: AttachmentInsight["type"]): string {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  if (kind === "image")
-    return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  if (kind === "image") return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
   if (kind === "audio")
     return ext === "wav"
       ? "audio/wav"
@@ -94,6 +84,7 @@ function Index() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null); // Estado para feedback dinâmico de etapas
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -116,6 +107,7 @@ function Index() {
     setDraft(null);
     setAttachmentInsights([]);
     setSatisfaction(null);
+    setStatusMessage(null);
     if (files.length === 0) return;
 
     const buckets: ExtraMedia = {
@@ -143,15 +135,9 @@ function Index() {
     setMediaFiles(mediaForAi);
     setSourceLabel(label);
 
-    const totalMedia =
-      buckets.images.length +
-      buckets.videos.length +
-      buckets.audios.length +
-      buckets.documents.length;
+    const totalMedia = buckets.images.length + buckets.videos.length + buckets.audios.length + buckets.documents.length;
     if (txts.length === 0 && totalMedia === 0) {
-      setError(
-        "Nenhum arquivo reconhecido. Envie o .txt exportado do WhatsApp ou a pasta inteira da exportação.",
-      );
+      setError("Nenhum arquivo reconhecido. Envie o .txt exportado do WhatsApp ou a pasta inteira da exportação.");
       return;
     }
     if (txts.length === 0) {
@@ -170,21 +156,17 @@ function Index() {
     setLoading(true);
     setError(null);
     try {
+      setStatusMessage("1/3 📂 Lendo e estruturando os arquivos de texto...");
       let combined = "";
       for (const f of txtFiles) {
         const t = await f.text();
         combined += (combined ? "\n" : "") + t;
       }
       const allMsgs = combined ? parseWhatsApp(combined) : [];
-      // Janela de análise: 2 semanas a partir da ÚLTIMA conversa registrada (não do dia atual).
-      const lastTs = allMsgs.length
-        ? Math.max(...allMsgs.map((m) => m.date.getTime()))
-        : Date.now();
+      const lastTs = allMsgs.length ? Math.max(...allMsgs.map((m) => m.date.getTime())) : Date.now();
       const windowEnd = lastTs;
       const windowStart = lastTs - 14 * 86_400_000;
-      const msgs = allMsgs.filter(
-        (m) => m.date.getTime() >= windowStart && m.date.getTime() <= windowEnd,
-      );
+      const msgs = allMsgs.filter((m) => m.date.getTime() >= windowStart && m.date.getTime() <= windowEnd);
       const a = analyze(msgs);
       const fileMedia = {
         image: extras.images.length,
@@ -197,35 +179,36 @@ function Index() {
       for (const k of Object.keys(fileMedia) as (keyof typeof fileMedia)[]) {
         a.mediaCount[k] = Math.max(a.mediaCount[k], fileMedia[k]);
       }
+
+      if (mediaFiles.length > 0) {
+        setStatusMessage(
+          `2/3 🖼️ Processando ${Math.min(mediaFiles.length, 8)} anexo(s) com Inteligência Computacional (OCR e Áudios)...`,
+        );
+      }
       const insights = await analyzeSelectedAttachments(mediaFiles);
       setAttachmentInsights(insights);
+
       if (msgs.length === 0 && allMsgs.length > 0) {
         setError(
           "Nenhuma mensagem encontrada nas últimas 2 semanas. A conversa pode estar fora do recorte solicitado.",
         );
         setAnalysis(null);
+        setStatusMessage(null);
       } else if (
         msgs.length === 0 &&
-        extras.images.length +
-          extras.videos.length +
-          extras.audios.length +
-          extras.documents.length ===
-          0
+        extras.images.length + extras.videos.length + extras.audios.length + extras.documents.length === 0
       ) {
         setError("Não foi possível identificar mensagens nem mídias.");
         setAnalysis(null);
+        setStatusMessage(null);
       } else {
         setAnalysis(a);
-        // Heurística de gênero a partir do nome do grupo
-        const lastWord = (a.groupName || sourceLabel || "")
-          .trim()
-          .split(/\s+/)
-          .pop()
-          ?.toLowerCase() ?? "";
+
+        setStatusMessage("3/3 🤖 Rodando Auditoria Comportamental, CSAT Analítico e Sinais de Churn...");
+
+        const lastWord = (a.groupName || sourceLabel || "").trim().split(/\s+/).pop()?.toLowerCase() ?? "";
         const gender: "o" | "a" =
-          /^(clinica|clínica|dra|dra\.|sra|sra\.|recep[cç][aã]o)$/.test(lastWord) || /a$/.test(lastWord)
-            ? "a"
-            : "o";
+          /^(clinica|clínica|dra|dra\.|sra|sra\.|recep[cç][aã]o)$/.test(lastWord) || /a$/.test(lastWord) ? "a" : "o";
         const convoText = msgs
           .filter((m) => !m.isSystem)
           .map((m) => `[${m.date.toLocaleDateString("pt-BR")} ${m.author}] ${m.content}`)
@@ -250,16 +233,18 @@ function Index() {
         }).catch(() => null);
         setSatisfaction(sat);
         setDraft(buildDraft(a, sourceLabel ?? "Relatório", insights, sat));
+        setStatusMessage(null); // Limpa mensagem após o fim
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao analisar.");
+      setStatusMessage(null);
     } finally {
       setLoading(false);
     }
   }
 
   function resetDraft() {
-    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights, satisfaction));
+    if (analysis) setDraft(buildDraft(analysis, sourceName ?? "Relatório", attachmentInsights, satisfaction));
   }
 
   function downloadPdf() {
@@ -269,9 +254,7 @@ function Index() {
     doc.save(`${fname}.pdf`);
   }
 
-  async function analyzeSelectedAttachments(
-    files: MediaAttachmentFile[],
-  ): Promise<AttachmentInsight[]> {
+  async function analyzeSelectedAttachments(files: MediaAttachmentFile[]): Promise<AttachmentInsight[]> {
     const selected = files.filter(({ file }) => file.size <= 8 * 1024 * 1024).slice(0, 8);
     if (!selected.length) return [];
     try {
@@ -291,8 +274,7 @@ function Index() {
       return selected.map(({ file, kind }) => ({
         name: file.name,
         type: kind,
-        summary:
-          "Anexo identificado e considerado como contexto da conversa; interpretação automática indisponível para este arquivo.",
+        summary: "Anexo considerado como contexto da conversa.",
       }));
     }
   }
@@ -313,18 +295,19 @@ function Index() {
           items.length === 1 && items[0].webkitGetAsEntry()?.isDirectory
             ? items[0].webkitGetAsEntry()!.name
             : `${all.length} arquivos`;
+        all.sort((x, y) => x.name.localeCompare(y.name));
         handleFiles(all, label);
       });
     } else {
       const files = Array.from(e.dataTransfer.files);
+      files.sort((x, y) => x.name.localeCompare(y.name));
       handleFiles(files, files.length === 1 ? files[0].name : `${files.length} arquivos`);
     }
   }
 
   const canAnalyze =
     txtFiles.length > 0 ||
-    extras.images.length + extras.videos.length + extras.audios.length + extras.documents.length >
-      0;
+    extras.images.length + extras.videos.length + extras.audios.length + extras.documents.length > 0;
 
   const kpis = useMemo(() => {
     if (!analysis) return null;
@@ -347,12 +330,8 @@ function Index() {
               W
             </div>
             <div>
-              <h1 className="text-base font-semibold leading-tight text-emerald-900">
-                Análise de Conversa WhatsApp
-              </h1>
-              <p className="text-xs text-emerald-700/70">
-                Relatório técnico enxuto e editável em PDF
-              </p>
+              <h1 className="text-base font-semibold leading-tight text-emerald-900">Análise de Conversa WhatsApp</h1>
+              <p className="text-xs text-emerald-700/70">Relatório técnico enxuto e editável em PDF</p>
             </div>
           </div>
         </div>
@@ -370,8 +349,7 @@ function Index() {
         >
           <h2 className="text-2xl font-bold text-emerald-900">Envie a exportação do WhatsApp</h2>
           <p className="mt-2 text-sm text-emerald-800/70">
-            Aceita <strong>.txt</strong>, imagens, vídeos, áudios e documentos. Você pode arrastar a
-            pasta inteira.
+            Aceita <strong>.txt</strong>, imagens, vídeos, áudios e documentos. Você pode arrastar a pasta inteira.
           </p>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -391,6 +369,7 @@ function Index() {
               className="hidden"
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
+                files.sort((x, y) => x.name.localeCompare(y.name));
                 handleFiles(files, files.length === 1 ? files[0].name : `${files.length} arquivos`);
                 e.target.value = "";
               }}
@@ -412,6 +391,7 @@ function Index() {
               className="hidden"
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
+                files.sort((x, y) => x.name.localeCompare(y.name));
                 let label = `${files.length} arquivos`;
                 const first = files[0] as File & { webkitRelativePath?: string };
                 if (first?.webkitRelativePath) label = first.webkitRelativePath.split("/")[0];
@@ -423,7 +403,15 @@ function Index() {
 
           {sourceLabel && (
             <div className="mt-6 flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3">
-              <span className="text-sm font-medium text-emerald-900">📎 {sourceLabel}</span>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-emerald-900">📎 {sourceLabel}</span>
+                {statusMessage && (
+                  <span className="text-xs font-semibold text-emerald-700 animate-pulse flex items-center gap-1.5 mt-0.5">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-600 animate-ping"></span>
+                    {statusMessage}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={runAnalysis}
                 disabled={loading || !canAnalyze}
@@ -434,7 +422,7 @@ function Index() {
             </div>
           )}
 
-          {info && !error && (
+          {info && !error && !loading && (
             <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               {info}
             </div>
@@ -450,13 +438,8 @@ function Index() {
           <div className="mt-10 space-y-6">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
               {kpis!.map((k) => (
-                <div
-                  key={k.label}
-                  className="rounded-xl border border-emerald-100 bg-white p-3 text-center shadow-sm"
-                >
-                  <p className="text-[10px] uppercase tracking-wide text-emerald-700/70">
-                    {k.label}
-                  </p>
+                <div key={k.label} className="rounded-xl border border-emerald-100 bg-white p-3 text-center shadow-sm">
+                  <p className="text-[10px] uppercase tracking-wide text-emerald-700/70">{k.label}</p>
                   <p className="mt-1 text-xl font-bold text-emerald-900">{k.value}</p>
                 </div>
               ))}
@@ -465,9 +448,7 @@ function Index() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-xl font-bold text-emerald-900">Pré-visualização editável</h3>
-                <p className="text-sm text-emerald-800/70">
-                  Ajuste os textos abaixo. As alterações vão para o PDF.
-                </p>
+                <p className="text-sm text-emerald-800/70">Ajuste os textos abaixo. As alterações vão para o PDF.</p>
               </div>
               <div className="flex gap-2">
                 <button
@@ -498,33 +479,20 @@ function Index() {
 }
 
 function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportDraft) => void }) {
-  const set = <K extends keyof ReportDraft>(k: K, v: ReportDraft[K]) =>
-    onChange({ ...draft, [k]: v });
+  const set = <K extends keyof ReportDraft>(k: K, v: ReportDraft[K]) => onChange({ ...draft, [k]: v });
 
   return (
     <div className="space-y-6">
       <Card title="Cabeçalho">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Título do relatório">
-            <input
-              className={inputCls}
-              value={draft.title}
-              onChange={(e) => set("title", e.target.value)}
-            />
+            <input className={inputCls} value={draft.title} onChange={(e) => set("title", e.target.value)} />
           </Field>
           <Field label="Subtítulo">
-            <input
-              className={inputCls}
-              value={draft.subtitle}
-              onChange={(e) => set("subtitle", e.target.value)}
-            />
+            <input className={inputCls} value={draft.subtitle} onChange={(e) => set("subtitle", e.target.value)} />
           </Field>
           <Field label="Cliente Contratante">
-            <input
-              className={inputCls}
-              value={draft.clientName}
-              onChange={(e) => set("clientName", e.target.value)}
-            />
+            <input className={inputCls} value={draft.clientName} onChange={(e) => set("clientName", e.target.value)} />
           </Field>
           <Field label="Módulo Auditado">
             <input
@@ -541,11 +509,7 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
             />
           </Field>
           <Field label="Status Atual">
-            <input
-              className={inputCls}
-              value={draft.status}
-              onChange={(e) => set("status", e.target.value)}
-            />
+            <input className={inputCls} value={draft.status} onChange={(e) => set("status", e.target.value)} />
           </Field>
           <Field label="Início do Grupo">
             <input
@@ -606,9 +570,7 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
           ))}
           <button
             className="text-sm font-medium text-emerald-700 hover:underline"
-            onClick={() =>
-              set("envolvidos", [...draft.envolvidos, { name: "", org: "", role: "" }])
-            }
+            onClick={() => set("envolvidos", [...draft.envolvidos, { name: "", org: "", role: "" }])}
           >
             + Adicionar envolvido
           </button>
@@ -804,9 +766,7 @@ const textareaCls = inputCls + " font-mono text-[12.5px] leading-relaxed";
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-emerald-700/70">
-        {label}
-      </span>
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-emerald-700/70">{label}</span>
       {children}
     </label>
   );
@@ -823,16 +783,12 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 async function walkEntry(entry: FileSystemEntry, out: File[]): Promise<void> {
   if (entry.isFile) {
-    const file = await new Promise<File>((res, rej) =>
-      (entry as FileSystemFileEntry).file(res, rej),
-    );
+    const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
     out.push(file);
   } else if (entry.isDirectory) {
     const reader = (entry as FileSystemDirectoryEntry).createReader();
     const readAll = async (): Promise<FileSystemEntry[]> => {
-      const batch = await new Promise<FileSystemEntry[]>((res, rej) =>
-        reader.readEntries(res, rej),
-      );
+      const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
       if (batch.length === 0) return [];
       const rest = await readAll();
       return [...batch, ...rest];
