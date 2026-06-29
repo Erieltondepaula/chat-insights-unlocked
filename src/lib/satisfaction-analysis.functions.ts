@@ -122,21 +122,19 @@ export const analyzeSatisfaction = createServerFn({ method: "POST" })
     if (!apiKey) return null;
 
     const suffix = data.clientGender;
-    // CORREÇÃO GRAMATICAL: "Cliente" é substantivo uniforme de dois gêneros. Removido o termo incorreto "clienta".
+    // CORREÇÃO: "Cliente" é um substantivo de dois gêneros. Removida a concatenação que gerava "clienta".
     const clienteRef = `${suffix === "a" ? "a" : "o"} cliente`;
 
     const sys = `Você é um ANALISTA SÊNIOR de Customer Success, Qualidade e Auditoria de Atendimento. Analisa logs de WhatsApp de suporte como UMA jornada única.
 
 REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
-1. PROIBIÇÃO DE CARACTERES CORROMPIDOS: É terminantemente proibido gerar símbolos matemáticos ou codificações corrompidas (como $\\emptyset=\\dot{Y}4$, !', &ª) no JSON. No campo 'category' use estritamente uma destas strings em caixa baixa: "critico", "duvida", "ajuste", "configuracao", "orientacao" ou "info".
-2. REGRA GRAMATICAL OBRIGATÓRIA: O substantivo "cliente" é uniforme. Use sempre "a cliente" ou "o cliente". É terminantemente PROIBIDO produzir ou inventar o termo incorreto "clienta" em qualquer parte do relatório ou das tabelas.
-3. FIM DO VÍCIO DE PADRÃO: Avalie a saúde com base em fatos atuais. Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "🟢 Excelente" ou "🟡 Atenção/Estabilizado" (nunca "Crítico" se tudo já foi resolvido). O Risco de Churn deve cair proporcionalmente se as soluções foram definitivas.
-4. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...", "vale ressaltar" ou "de forma cronológica". Escreva resumos e narrativas de forma fluida, natural, humana e executiva.
+1. PROIBIÇÃO ABSOLUTA DE EMOJIS E SÍMBOLOS: É terminantemente proibido gerar emojis (como 🔴, 🟢, ⚠️) ou símbolos matemáticos corrompidos (como $\\emptyset=\\dot{Y}4$, !', &ª) em qualquer string do JSON. No campo 'category' use estritamente uma destas palavras em caixa baixa: "critico", "duvida", "ajuste", "configuracao", "orientacao" ou "info".
+2. REGRA GRAMATICAL: O substantivo "cliente" é uniforme. Use sempre "a cliente" ou "o cliente". É proibido inventar ou escrever o termo incorreto "clienta" em qualquer parte do relatório.
+3. FIM DO VÍCIO DE PADRÃO: Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "Excelente" ou "Atencao/Estabilizado" (nunca "Critico" se tudo já foi resolvido).
+4. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...". Escreva resumos e narrativas de forma fluida, natural e gerencial.
 5. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
-6. CITAÇÕES GATILHO: Toda análise de sentimento ou risco de churn deve ser ancorada na frase exata (ipsis litteris) enviada pelo cliente e na respectiva data.
-7. Referências ao cliente devem usar o gênero correto de acordo com o padrão formal: "${clienteRef}".
 
-SAÍDA: Retorne APENAS o objeto JSON puro e perfeitamente válido, sem blocos de markdown (\`\`\`json).`;
+SAÍDA: Retorne APENAS o objeto JSON puro e válido, sem blocos de markdown (\`\`\`json).`;
 
     const userMsg = `CLIENTE: ${data.clientName || "(não informado)"} — referência: ${clienteRef}
 PERÍODO: ${data.stats.firstDate ?? "—"} a ${data.stats.lastDate ?? "—"}
@@ -149,7 +147,7 @@ ${data.attachmentInsights.length ? data.attachmentInsights.map((s, i) => `[${i +
 CONVERSA (texto integral, cronológica):
 ${data.conversationText.slice(0, 40000)}
 
-Retorne o JSON seguindo fielmente este formato:
+Retorne o JSON neste formato exato:
 {
   "sentiment": "muito_satisfeito|satisfeito|neutro|insatisfeito|muito_insatisfeito",
   "score": 0-100,
@@ -162,17 +160,17 @@ Retorne o JSON seguindo fielmente este formato:
   "repeatedRequestsCount": number,
   "humanInterventionNeeded": boolean,
   "churnRisk": "baixo|medio|alto",
-  "mainReasons": ["motivos curtos e objetivos"],
-  "executiveSummary": "frases gerenciais e realistas",
+  "mainReasons": ["motivos objetivos"],
+  "executiveSummary": "frases gerenciais realistas",
   "consolidatedSummary": "P1\\n\\nP2\\n\\nP3",
   "auditReport": {
-    "participants": [{"name":"Nome/Cargo Limpo","org":"Organização","role":"Atribuição Real"}],
-    "timeline": [{"date":"DD/MM/AAAA","category":"critico|duvida|ajuste|configuracao|orientacao|info","summary":"resumo natural","supportResponse":"ação técnica real","status":"Resolvido|Pendente|Em análise"}],
+    "participants": [{"name":"Nome ou Cargo","org":"Organização","role":"Atribuição Real (Sempre Cliente ou Suporte)"}],
+    "timeline": [{"date":"DD/MM/AAAA","category":"critico|duvida|ajuste|configuracao|orientacao|info","summary":"resumo natural","supportResponse":"ação técnica","status":"Resolvido|Pendente|Em análise"}],
     "supportBehavior": {
-      "resolutive": ["parametrizações e correções rápidas documentadas"],
-      "defenses": ["casos onde o suporte provou que o erro foi operacional da clínica"],
-      "limitations": ["limitações nativas do produto alinhadas de forma clara"],
-      "silences": ["omissões, demoras ou cobranças do cliente deixadas no vácuo"]
+      "resolutive": ["parametrizações e correções rápidas"],
+      "defenses": ["casos onde o erro foi operacional do cliente"],
+      "limitations": ["limitações nativas do produto declaradas"],
+      "silences": ["omissões ou demoras do time"]
     },
     "indicators": {
       "ajustes": number,
@@ -182,26 +180,26 @@ Retorne o JSON seguindo fielmente este formato:
       "reaberturas": number,
       "topErrors": ["erros reincidentes"]
     },
-    "health": {"label":"🟢 Excelente|🟡 Atenção|🔴 Crítico","justification":"Justificativa baseada nas pendências atuais"},
-    "humorEvolution": {"label":"⬆ Melhorando|➡ Estável|⬇ Piorando","justification":"Razão real"},
+    "health": {"label":"Excelente|Atencao|Critico","justification":"Justificativa baseada nas pendências atuais"},
+    "humorEvolution": {"label":"Melhorando|Estavel|Piorando","justification":"Razão real"},
     "complexity": {"label":"Baixa|Média|Alta|Muito Alta","motive":"motivo"},
-    "effort": {"label":"Baixo|Médio|Alto|Muito Alto","detail":"detalhe qualitativo dos retrabalhos"},
+    "effort": {"label":"Baixo|Médio|Alto|Muito Alto","detail":"detalhe qualitativo"},
     "emotionalMoments": [{"emotion":"Satisfação|Insatisfação|Frustração|Confiança|Ansiedade|Urgência","confidence":100,"quote":"frase exata","date":"DD/MM/AAAA","motive":"contexto"}],
-    "humorTimeline": [{"date":"DD/MM","emoji":"😊|😐|😠"}],
-    "csat": {"score":100,"classification":"Classificação","calculationMemo":"Memória analítica fundamentada"},
-    "churnSignals": [{"weight":"Baixo|Médio|Alto","date":"DD/MM/AAAA","quote":"frase exata do cliente","impact":"impacto contratual real"}],
+    "humorTimeline": [{"date":"DD/MM","emoji":"Apenas texto como Feliz, Neutro ou Frustrado"}],
+    "csat": {"score":100,"classification":"Classificação","calculationMemo":"Memória analítica"},
+    "churnSignals": [{"weight":"Baixo|Médio|Alto","date":"DD/MM/AAAA","quote":"frase exata","impact":"impacto real"}],
     "diagnosis": {
-      "strengths": ["pontos fortes do suporte"],
-      "attentionPoints": ["pontos de atrito sistêmico"],
+      "strengths": ["pontos fortes"],
+      "attentionPoints": ["pontos de atenção"],
       "opportunities": {
-        "product": ["melhorias de software nativas"],
-        "support": ["melhorias de proatividade do time"],
-        "process": ["treinamentos sugeridos para o cliente"]
+        "product": ["melhorias de produto"],
+        "support": ["melhorias de atendimento"],
+        "process": ["treinamentos para o cliente"]
       }
     },
     "conclusion": {
       "willChurn": "Análise preditiva explícita",
-      "isEvolvingMaturity": "Avaliação de maturidade real",
+      "isEvolvingMaturity": "Avaliação de maturidade",
       "nextSteps": [{"action":"ação imediata","owner":"responsável"}]
     }
   }
