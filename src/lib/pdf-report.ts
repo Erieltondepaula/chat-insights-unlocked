@@ -959,96 +959,107 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   }
   y += 8;
 
-  // ----- Envolvidos
-  if (draft.envolvidos.length) {
-    y = sectionTitle(doc, "1. Contratantes, Colaboradores e Equipe de Suporte", margin, y);
-    autoTable(doc, {
-      startY: y,
-      head: [["Nome do Envolvido", "Organização", "Papel / Atribuição no Processo"]],
-      body: draft.envolvidos.map((p) => [sanitize(p.name), p.org, sanitize(p.role)]),
-      headStyles: {
-        fillColor: NAVY_DEEP,
-        textColor: 255,
-        fontSize: 9.5,
-        fontStyle: "bold",
-        halign: "left",
-        cellPadding: 7,
-      },
-      styles: {
-        fontSize: 9.2,
-        cellPadding: 7,
-        valign: "top",
-        lineColor: RULE,
-        textColor: TEXT,
-      },
-      columnStyles: {
-        0: { cellWidth: 150, fontStyle: "bold" },
-        1: { cellWidth: 110, fillColor: INFO_BG, textColor: BLUE, fontStyle: "bold" },
-        2: { cellWidth: contentW - 260 },
-      },
-      alternateRowStyles: { fillColor: [255, 255, 255] },
-      margin: { left: margin, right: margin },
-    });
-    y = lastY(doc) + 22;
-  }
+  const hasExtended = !!draft.satisfaction?.auditReport;
 
+  // ===== 1. Cabeçalho Executivo já foi renderizado acima (info box).
+  // Quando há análise de IA estendida, renderizamos as 11 seções no formato novo.
+  if (hasExtended) {
+    // 2-3-4-5-6-7-8-9-10-11 (a seção 1 é o próprio cabeçalho/info box acima)
+    y = renderExtendedReport(doc, draft, margin, y, contentW);
 
-  // ----- Demands
-  y = sectionTitle(doc, "2. Linha do Tempo do Atendimento", margin, y);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.3);
-  doc.setTextColor(...TEXT);
-  const introLines = doc.splitTextToSize(
-    "Abaixo constam, de forma sequencial, os principais incidentes reportados pela clínica, acompanhados de suas respectivas datas de abertura, descrições e devolutivas registradas pela equipe Amigo Flow.",
-    contentW,
-  );
-  for (const ln of introLines) {
-    doc.text(ln, margin, y);
-    y += 12;
-  }
-  y += 6;
-  for (const d of draft.demands) {
-    y = demandBlock(doc, d, margin, y, contentW);
-  }
+    // Indicadores visuais (gráficos) + Linha do tempo detalhada das demandas
+    // entram como complemento ao final, mas sem duplicar conteúdo.
+    if (draft.demands.length) {
+      y = sectionTitle(doc, "Anexo A — Linha do Tempo Detalhada de Demandas", margin, y);
+      for (const d of draft.demands) {
+        y = demandBlock(doc, d, margin, y, contentW);
+      }
+    }
+    y = sectionTitle(doc, "Anexo B — Indicadores Visuais", margin, y);
+    y = renderMetrics(doc, draft.metrics, margin, y, contentW);
 
-  // ----- 3 + 5 juntos: mantém indicadores e satisfação no mesmo bloco visual
-  // sempre que couber em uma folha nova, evitando páginas quase vazias.
-  y = ensureGroupStart(
-    doc,
-    y,
-    estimateMetricsHeight(draft.metrics) + estimateSatisfactionHeight(doc, draft, contentW) + 74,
-    margin,
-  );
+    // Resumo consolidado final
+    y = sectionTitle(doc, "Anexo C — Resumo Consolidado do Atendimento", margin, y);
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "normal");
+    for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
+      const text = para.trim();
+      if (!text) continue;
+      y = ensureSpace(doc, y, 24, margin);
+      y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0, true, margin);
+      y += 6;
+    }
+    y += 4;
+  } else {
+    // ----- Fallback: estrutura clássica
+    if (draft.envolvidos.length) {
+      y = sectionTitle(doc, "1. Contratantes, Colaboradores e Equipe de Suporte", margin, y);
+      autoTable(doc, {
+        startY: y,
+        head: [["Nome do Envolvido", "Organização", "Papel / Atribuição no Processo"]],
+        body: draft.envolvidos.map((p) => [sanitize(p.name), p.org, sanitize(p.role)]),
+        headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5, fontStyle: "bold", halign: "left", cellPadding: 7 },
+        styles: { fontSize: 9.2, cellPadding: 7, valign: "top", lineColor: RULE, textColor: TEXT },
+        columnStyles: {
+          0: { cellWidth: 150, fontStyle: "bold" },
+          1: { cellWidth: 110, fillColor: INFO_BG, textColor: BLUE, fontStyle: "bold" },
+          2: { cellWidth: contentW - 260 },
+        },
+        alternateRowStyles: { fillColor: [255, 255, 255] },
+        margin: { left: margin, right: margin },
+      });
+      y = lastY(doc) + 22;
+    }
 
-  // ----- 3. Indicadores Visuais (gráficos)
-  y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
-  y = renderMetrics(doc, draft.metrics, margin, y, contentW);
-
-  // ----- 5. Sentimentos e Satisfação — posicionado logo após os indicadores
-  y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
-  y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
-
-  // ----- 4. Análise do Atendimento (situação atual)
-  y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
-  y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 8;
-
-  // ----- 6. Conclusões e Recomendações (somente síntese + temas — sem repetir ações/pendências)
-  y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
-  y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
-  y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
-
-  // ----- 7. Resumo Consolidado do Atendimento (narrativa final, com destaques em negrito)
-  y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
-  doc.setFontSize(9.5);
-  doc.setFont("helvetica", "normal");
-  for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
-    const text = para.trim();
-    if (!text) continue;
-    y = ensureSpace(doc, y, 24, margin);
-    y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0, true, margin);
+    y = sectionTitle(doc, "2. Linha do Tempo do Atendimento", margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.3);
+    doc.setTextColor(...TEXT);
+    const introLines = doc.splitTextToSize(
+      "Abaixo constam, de forma sequencial, os principais incidentes reportados pela clínica, acompanhados de suas respectivas datas de abertura, descrições e devolutivas registradas pela equipe Amigo Flow.",
+      contentW,
+    );
+    for (const ln of introLines) {
+      doc.text(ln, margin, y);
+      y += 12;
+    }
     y += 6;
+    for (const d of draft.demands) {
+      y = demandBlock(doc, d, margin, y, contentW);
+    }
+
+    y = ensureGroupStart(
+      doc,
+      y,
+      estimateMetricsHeight(draft.metrics) + estimateSatisfactionHeight(doc, draft, contentW) + 74,
+      margin,
+    );
+
+    y = sectionTitle(doc, "3. Indicadores Visuais", margin, y);
+    y = renderMetrics(doc, draft.metrics, margin, y, contentW);
+
+    y = sectionTitle(doc, "5. Sentimentos e Satisfação do Cliente", margin, y);
+    y = renderSatisfactionSection(doc, draft, margin, y, contentW) + 8;
+
+    y = sectionTitle(doc, "4. Análise do Atendimento", margin, y);
+    y = paragraph(doc, sanitize(draft.currentSituation), margin, y, contentW, 9.3) + 8;
+
+    y = sectionTitle(doc, "6. Conclusões e Recomendações", margin, y);
+    y = titledParagraph(doc, "Síntese", sanitize(draft.executiveSummary), margin, y, contentW);
+    y = titledParagraph(doc, "Principais Temas Identificados", sanitize(draft.mainThemes), margin, y, contentW);
+
+    y = sectionTitle(doc, "7. Resumo Consolidado do Atendimento", margin, y);
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "normal");
+    for (const para of sanitize(draft.consolidatedSummary).split(/\n{2,}/)) {
+      const text = para.trim();
+      if (!text) continue;
+      y = ensureSpace(doc, y, 24, margin);
+      y = renderRichText(doc, text, margin, margin, contentW, y, 12.5, 0, true, margin);
+      y += 6;
+    }
+    y += 4;
   }
-  y += 4;
 
 
 
@@ -1819,4 +1830,360 @@ function buildSentimentNarrative(m: ReportMetrics): string {
     ? ` Trechos representativos: ${m.churnQuotes.slice(0, 3).map((q) => `"${q}"`).join(" | ")}.`
     : "";
   return `A análise de sentimento considerou todas as mensagens textuais enviadas pela clínica no período auditado. Foram identificadas ${partes.join(", ")}.${churnTxt}${quotesTxt}`;
+}
+
+// ============================================================
+// EXTENDED 11-SECTION RENDERER (AI auditReport)
+// ============================================================
+function categoryLabel(c: string): { emoji: string; label: string; color: [number, number, number] } {
+  switch (c) {
+    case "critico":
+      return { emoji: "🔴", label: "Problema Crítico", color: ALERT_BORDER };
+    case "duvida":
+      return { emoji: "🟡", label: "Dúvida", color: [200, 150, 30] };
+    case "ajuste":
+      return { emoji: "🟢", label: "Ajuste Realizado", color: [46, 139, 87] };
+    case "configuracao":
+      return { emoji: "🔵", label: "Configuração", color: BLUE };
+    case "orientacao":
+      return { emoji: "🟣", label: "Orientação", color: [120, 70, 160] };
+    default:
+      return { emoji: "⚪", label: "Informação", color: MUTED };
+  }
+}
+
+function renderQuadrant(
+  doc: jsPDF,
+  title: string,
+  items: string[],
+  tone: [number, number, number],
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const padding = 8;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.6);
+  const lines: string[] = [];
+  for (const it of items.length ? items : ["(sem registros)"]) {
+    const wrapped = doc.splitTextToSize(`• ${sanitize(it)}`, w - padding * 2) as string[];
+    lines.push(...wrapped);
+  }
+  const h = 22 + lines.length * 11 + padding;
+  y = ensureSpace(doc, y, h + 6, x);
+  doc.setFillColor(...INFO_BG);
+  doc.roundedRect(x, y, w, h, 3, 3, "F");
+  doc.setFillColor(...tone);
+  doc.rect(x, y, 3, h, "F");
+  doc.setTextColor(...tone);
+  doc.text(title, x + padding, y + 14);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.8);
+  doc.setTextColor(...TEXT);
+  let ly = y + 28;
+  for (const ln of lines) {
+    doc.text(ln, x + padding, ly);
+    ly += 11;
+  }
+  return y + h + 6;
+}
+
+function renderListBox(
+  doc: jsPDF,
+  title: string,
+  items: string[],
+  x: number,
+  y: number,
+  w: number,
+): number {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.4);
+  doc.setTextColor(...NAVY);
+  y = ensureSpace(doc, y, 16, x);
+  doc.text(title, x, y);
+  y += 12;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...TEXT);
+  for (const it of items.length ? items : ["(nenhum)"]) {
+    const lines = doc.splitTextToSize(`• ${sanitize(it)}`, w) as string[];
+    for (const ln of lines) {
+      y = ensureSpace(doc, y, 12, x);
+      doc.text(ln, x, y);
+      y += 11.5;
+    }
+  }
+  return y + 4;
+}
+
+export function renderExtendedReport(
+  doc: jsPDF,
+  draft: ReportDraft,
+  margin: number,
+  startY: number,
+  contentW: number,
+): number {
+  const ar = draft.satisfaction?.auditReport;
+  if (!ar) return startY;
+  let y = startY;
+
+  // ===== 2. Mapeamento de Participantes (substitui números por nomes/cargos)
+  if (ar.participants?.length) {
+    y = sectionTitle(doc, "2. Mapeamento de Participantes da Jornada", margin, y);
+    autoTable(doc, {
+      startY: y,
+      head: [["Nome / Cargo", "Organização", "Atribuição Operacional"]],
+      body: ar.participants.map((p) => [
+        sanitize(p.name),
+        sanitize(p.org),
+        sanitize(p.role),
+      ]),
+      headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.4, fontStyle: "bold", cellPadding: 6 },
+      styles: { fontSize: 9, cellPadding: 6, valign: "top", lineColor: RULE, textColor: TEXT },
+      columnStyles: {
+        0: { cellWidth: 160, fontStyle: "bold" },
+        1: { cellWidth: 110, fillColor: INFO_BG, textColor: BLUE, fontStyle: "bold" },
+        2: { cellWidth: contentW - 270 },
+      },
+      margin: { left: margin, right: margin },
+    });
+    y = lastY(doc) + 16;
+  }
+
+  // ===== 3. Linha do Tempo Operacional
+  if (ar.timeline?.length) {
+    y = sectionTitle(doc, "3. Linha do Tempo Operacional (Fatos Relevantes)", margin, y);
+    autoTable(doc, {
+      startY: y,
+      head: [["Data", "Categoria", "Resumo do Fato", "Posicionamento do Suporte", "Status"]],
+      body: ar.timeline.map((t) => {
+        const c = categoryLabel(t.category);
+        return [
+          sanitize(t.date),
+          `${c.emoji} ${c.label}`,
+          sanitize(t.summary),
+          sanitize(t.supportResponse),
+          sanitize(t.status),
+        ];
+      }),
+      headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9, fontStyle: "bold", cellPadding: 5 },
+      styles: { fontSize: 8.6, cellPadding: 5, valign: "top", lineColor: RULE, textColor: TEXT, overflow: "linebreak" },
+      columnStyles: {
+        0: { cellWidth: 56, fontStyle: "bold" },
+        1: { cellWidth: 92 },
+        2: { cellWidth: (contentW - 56 - 92 - 70) * 0.55 },
+        3: { cellWidth: (contentW - 56 - 92 - 70) * 0.45 },
+        4: { cellWidth: 70, fontStyle: "bold" },
+      },
+      margin: { left: margin, right: margin },
+    });
+    y = lastY(doc) + 16;
+  }
+
+  // ===== 4. Auditoria Comportamental da Equipe de Suporte
+  y = sectionTitle(doc, "4. Auditoria Comportamental da Equipe de Suporte", margin, y);
+  y = renderQuadrant(doc, "🟢 Ações Resolutivas", ar.supportBehavior?.resolutive ?? [], [46, 139, 87], margin, y, contentW);
+  y = renderQuadrant(doc, "🟡 Defesas Técnicas Legítimas", ar.supportBehavior?.defenses ?? [], [200, 150, 30], margin, y, contentW);
+  y = renderQuadrant(doc, "🔵 Limitações do Produto Declaradas", ar.supportBehavior?.limitations ?? [], BLUE, margin, y, contentW);
+  y = renderQuadrant(doc, "🔴 Silêncios, Demoras e Gargalos", ar.supportBehavior?.silences ?? [], ALERT_BORDER, margin, y, contentW);
+
+  // ===== 5. Painel de Indicadores Executivos
+  if (ar.indicators) {
+    y = sectionTitle(doc, "5. Painel de Indicadores Executivos", margin, y);
+    const ind = ar.indicators;
+    autoTable(doc, {
+      startY: y,
+      head: [["Indicador", "Quantidade"]],
+      body: [
+        ["Ajustes / Configurações realizadas", String(ind.ajustes ?? 0)],
+        ["Dúvidas sanadas", String(ind.duvidas ?? 0)],
+        ["Orientações prestadas", String(ind.orientacoes ?? 0)],
+        ["Bugs / Inconsistências reais do sistema", String(ind.bugs ?? 0)],
+        ["Reaberturas / Problemas recorrentes", String(ind.reaberturas ?? 0)],
+      ],
+      headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.4, fontStyle: "bold", cellPadding: 6 },
+      styles: { fontSize: 9, cellPadding: 6, lineColor: RULE, textColor: TEXT },
+      columnStyles: {
+        0: { cellWidth: contentW - 90 },
+        1: { cellWidth: 90, halign: "center", fontStyle: "bold", textColor: BLUE },
+      },
+      margin: { left: margin, right: margin },
+    });
+    y = lastY(doc) + 10;
+    if (ind.topErrors?.length) {
+      y = renderListBox(doc, "Top Erros Mais Recorrentes", ind.topErrors, margin, y, contentW);
+    }
+  }
+
+  // ===== 6. Saúde, Evolução e Esforço
+  y = sectionTitle(doc, "6. Saúde, Evolução e Esforço", margin, y);
+  const healthRows: [string, string, string][] = [
+    ["Saúde do Atendimento", sanitize(ar.health?.label ?? "—"), sanitize(ar.health?.justification ?? "—")],
+    ["Evolução do Humor", sanitize(ar.humorEvolution?.label ?? "—"), sanitize(ar.humorEvolution?.justification ?? "—")],
+    ["Complexidade Técnica", sanitize(ar.complexity?.label ?? "—"), sanitize(ar.complexity?.motive ?? "—")],
+    ["Nível de Esforço do Cliente", sanitize(ar.effort?.label ?? "—"), sanitize(ar.effort?.detail ?? "—")],
+  ];
+  autoTable(doc, {
+    startY: y,
+    head: [["Indicador", "Classificação", "Justificativa"]],
+    body: healthRows,
+    headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.4, fontStyle: "bold", cellPadding: 6 },
+    styles: { fontSize: 9, cellPadding: 6, valign: "top", lineColor: RULE, textColor: TEXT },
+    columnStyles: {
+      0: { cellWidth: 150, fontStyle: "bold" },
+      1: { cellWidth: 110, fillColor: INFO_BG, fontStyle: "bold", textColor: BLUE },
+      2: { cellWidth: contentW - 260 },
+    },
+    margin: { left: margin, right: margin },
+  });
+  y = lastY(doc) + 16;
+
+  // ===== 7. Mapeamento Emocional e Jornada do Humor
+  if (ar.emotionalMoments?.length || ar.humorTimeline?.length) {
+    y = sectionTitle(doc, "7. Mapeamento Emocional e Jornada do Humor", margin, y);
+    if (ar.emotionalMoments?.length) {
+      autoTable(doc, {
+        startY: y,
+        head: [["Emoção", "Confiança", "Data", "Mensagem do Cliente", "Motivo"]],
+        body: ar.emotionalMoments.map((m) => [
+          sanitize(m.emotion),
+          `${m.confidence ?? 0}%`,
+          sanitize(m.date),
+          `"${sanitize(m.quote)}"`,
+          sanitize(m.motive),
+        ]),
+        headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9, fontStyle: "bold", cellPadding: 5 },
+        styles: { fontSize: 8.6, cellPadding: 5, valign: "top", lineColor: RULE, textColor: TEXT, overflow: "linebreak" },
+        columnStyles: {
+          0: { cellWidth: 70, fontStyle: "bold" },
+          1: { cellWidth: 50, halign: "center" },
+          2: { cellWidth: 56 },
+          3: { cellWidth: (contentW - 176) * 0.55, fontStyle: "italic" },
+          4: { cellWidth: (contentW - 176) * 0.45 },
+        },
+        margin: { left: margin, right: margin },
+      });
+      y = lastY(doc) + 10;
+    }
+    if (ar.humorTimeline?.length) {
+      y = ensureSpace(doc, y, 32, margin);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.4);
+      doc.setTextColor(...NAVY);
+      doc.text("Linha do Tempo do Humor:", margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(...TEXT);
+      const line = ar.humorTimeline.map((h) => `${sanitize(h.date)} ${sanitize(h.emoji)}`).join("   →   ");
+      const wrapped = doc.splitTextToSize(line, contentW) as string[];
+      for (const ln of wrapped) {
+        y = ensureSpace(doc, y, 12, margin);
+        doc.text(ln, margin, y);
+        y += 12;
+      }
+      y += 6;
+    }
+  }
+
+  // ===== 8. Score de Satisfação (CSAT Analítico)
+  if (ar.csat) {
+    y = sectionTitle(doc, "8. Score de Satisfação do Cliente (CSAT Analítico)", margin, y);
+    y = ensureSpace(doc, y, 56, margin);
+    doc.setFillColor(...INFO_BG);
+    doc.roundedRect(margin, y, contentW, 50, 4, 4, "F");
+    doc.setFillColor(...BLUE);
+    doc.rect(margin, y, 4, 50, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(26);
+    doc.setTextColor(...NAVY);
+    doc.text(`${ar.csat.score}/100`, margin + 14, y + 32);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...BLUE);
+    doc.text(sanitize(ar.csat.classification), margin + 130, y + 22);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.8);
+    doc.setTextColor(...MUTED);
+    doc.text("Classificação", margin + 130, y + 36);
+    y += 60;
+    y = renderListBox(doc, "Memória de Cálculo", [ar.csat.calculationMemo], margin, y, contentW);
+  }
+
+  // ===== 9. Detecção e Evidenciação do Alerta de Risco de Churn
+  y = sectionTitle(doc, "9. Detecção e Evidenciação do Alerta de Risco de Churn", margin, y);
+  if (!ar.churnSignals?.length) {
+    y = paragraph(doc, "Nenhum sinal explícito de risco de cancelamento contratual identificado no período analisado.", margin, y, contentW, 9.2) + 6;
+  } else {
+    for (let i = 0; i < ar.churnSignals.length; i++) {
+      const s = ar.churnSignals[i];
+      const lines = doc.splitTextToSize(`"${sanitize(s.quote)}"`, contentW - 20) as string[];
+      const motiveLines = doc.splitTextToSize(`Impacto: ${sanitize(s.impact)}`, contentW - 20) as string[];
+      const h = 36 + lines.length * 11 + motiveLines.length * 11 + 8;
+      y = ensureSpace(doc, y, h + 8, margin);
+      doc.setFillColor(253, 240, 240);
+      doc.setDrawColor(...ALERT_BORDER);
+      doc.roundedRect(margin, y, contentW, h, 3, 3, "FD");
+      doc.setFillColor(...ALERT_BORDER);
+      doc.rect(margin, y, 4, h, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.6);
+      doc.setTextColor(...ALERT_BORDER);
+      doc.text(`Sinal nº ${i + 1}  •  Peso: ${sanitize(s.weight)}  •  Data: ${sanitize(s.date)}`, margin + 10, y + 16);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(...TEXT);
+      let ly = y + 30;
+      for (const ln of lines) {
+        doc.text(ln, margin + 10, ly);
+        ly += 11;
+      }
+      doc.setFont("helvetica", "normal");
+      ly += 4;
+      for (const ln of motiveLines) {
+        doc.text(ln, margin + 10, ly);
+        ly += 11;
+      }
+      y += h + 8;
+    }
+  }
+
+  // ===== 10. Diagnóstico Final
+  if (ar.diagnosis) {
+    y = sectionTitle(doc, "10. Diagnóstico Final: Pontos Fortes, Críticos e Oportunidades", margin, y);
+    y = renderListBox(doc, "Pontos Positivos", ar.diagnosis.strengths ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Pontos de Atenção", ar.diagnosis.attentionPoints ?? [], margin, y, contentW);
+    y = renderListBox(doc, "A) Produto / Engenharia", ar.diagnosis.opportunities?.product ?? [], margin, y, contentW);
+    y = renderListBox(doc, "B) Suporte / Atendimento", ar.diagnosis.opportunities?.support ?? [], margin, y, contentW);
+    y = renderListBox(doc, "C) Processo / Implantação", ar.diagnosis.opportunities?.process ?? [], margin, y, contentW);
+  }
+
+  // ===== 11. Resumo Executivo e Conclusão
+  if (ar.conclusion) {
+    y = sectionTitle(doc, "11. Resumo Executivo e Conclusão", margin, y);
+    y = renderListBox(doc, "O cliente demonstra propensão a cancelar o contrato?", [ar.conclusion.willChurn || "—"], margin, y, contentW);
+    y = renderListBox(doc, "O suporte está evoluindo a maturidade do cliente ou agindo de forma paliativa?", [ar.conclusion.isEvolvingMaturity || "—"], margin, y, contentW);
+    if (ar.conclusion.nextSteps?.length) {
+      autoTable(doc, {
+        startY: y,
+        head: [["#", "Próximo Passo Imediato", "Responsável"]],
+        body: ar.conclusion.nextSteps.slice(0, 3).map((s, i) => [
+          String(i + 1),
+          sanitize(s.action),
+          sanitize(s.owner),
+        ]),
+        headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.4, fontStyle: "bold", cellPadding: 6 },
+        styles: { fontSize: 9, cellPadding: 6, valign: "top", lineColor: RULE, textColor: TEXT },
+        columnStyles: {
+          0: { cellWidth: 30, halign: "center", fontStyle: "bold" },
+          1: { cellWidth: contentW - 160 },
+          2: { cellWidth: 130, fontStyle: "bold", textColor: BLUE, fillColor: INFO_BG },
+        },
+        margin: { left: margin, right: margin },
+      });
+      y = lastY(doc) + 12;
+    }
+  }
+
+  return y;
 }
