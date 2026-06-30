@@ -244,7 +244,7 @@ function Index() {
   }
 
   function resetDraft() {
-    if (analysis) setDraft(buildDraft(analysis, sourceName ?? "Relatório", attachmentInsights, satisfaction));
+    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights, satisfaction));
   }
 
   function downloadPdf() {
