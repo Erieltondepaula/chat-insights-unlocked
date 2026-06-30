@@ -471,6 +471,54 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   doc.text(sanitize(draft.subtitle), margin, y);
   y += 16;
 
+  // ===== Fallback executivo (sempre renderizado) =====
+  y = sectionTitle(doc, "1. Painel Executivo do Atendimento", margin, y);
+  autoTable(doc, {
+    startY: y,
+    head: [["Indicador", "Valor"]],
+    body: [
+      ["Cliente", sanitize(draft.clientName)],
+      ["Periodo", sanitize(draft.periodSummary)],
+      ["Status", sanitize(draft.status)],
+      ["Total de solicitacoes", String(draft.metrics.totalSolicitacoes)],
+      ["Resolvidas", String(draft.metrics.resolvidas)],
+      ["Pendentes", String(draft.metrics.pendentes)],
+      ["% Resolucao", `${draft.metrics.pctResolucao.toFixed(0)}%`],
+    ],
+    headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
+    styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, valign: "top" },
+    columnStyles: { 0: { cellWidth: 160, fontStyle: "bold" } },
+    margin: { left: margin, right: margin },
+  });
+  y = (doc as any).lastAutoTable.finalY + 16;
+
+  if (draft.envolvidos?.length) {
+    y = sectionTitle(doc, "Participantes Identificados", margin, y);
+    autoTable(doc, {
+      startY: y,
+      head: [["Nome", "Organizacao", "Atribuicao"]],
+      body: draft.envolvidos.map((p) => [sanitize(p.name), sanitize(p.org), sanitize(p.role)]),
+      headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
+      styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT },
+      margin: { left: margin, right: margin },
+    });
+    y = (doc as any).lastAutoTable.finalY + 16;
+  }
+
+  if (draft.demands?.length) {
+    y = sectionTitle(doc, "Demandas e Devolutivas", margin, y);
+    for (const d of draft.demands) {
+      y = paragraph(doc, sanitize(d.clientDemand), margin, y, contentW, 9.5);
+      if (d.supportActions) y = paragraph(doc, sanitize(d.supportActions), margin, y, contentW, 9);
+      y += 4;
+    }
+  }
+
+  if (draft.consolidatedSummary) {
+    y = sectionTitle(doc, "Resumo Consolidado", margin, y);
+    y = paragraph(doc, sanitize(draft.consolidatedSummary), margin, y, contentW, 9.5);
+  }
+
   const ar = draft.satisfaction?.auditReport;
   if (ar) {
     if (draft.metrics.pendentes === 0) {
