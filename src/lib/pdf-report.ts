@@ -363,8 +363,13 @@ function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = n
   };
 
   if (satisfaction) {
-    metrics.satisfacao.churnRisk =
-      pendentes === 0 ? 0 : satisfaction.churnRisk === "alto" || satisfaction.churnRisk === "medio" ? 1 : 0;
+    const churnSuppressMetric =
+      pendentes === 0 || satisfaction.churnRisk === "baixo" || (totalSolicitacoes > 0 && pctResolucao >= 95);
+    metrics.satisfacao.churnRisk = churnSuppressMetric
+      ? 0
+      : satisfaction.churnRisk === "alto" || satisfaction.churnRisk === "medio"
+        ? 1
+        : 0;
     metrics.satisfacao.insatisfeito =
       pendentes === 0
         ? 0
