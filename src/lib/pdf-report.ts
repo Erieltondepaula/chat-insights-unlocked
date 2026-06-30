@@ -646,7 +646,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
     // Seção 9: Churn
     y = sectionTitle(doc, "9. Deteccao e Evidenciacao do Alerta de Risco de Churn", margin, y);
-    if (draft.metrics.pendentes === 0 || !ar.churnSignals?.length) {
+    const churnSuppress =
+      draft.metrics.pendentes === 0 ||
+      draft.satisfaction?.churnRisk === "baixo" ||
+      draft.metrics.pctResolucao >= 95;
+    if (churnSuppress || !ar.churnSignals?.length) {
       y = paragraph(
         doc,
         "Nenhum sinal ativo de risco de churn no encerramento deste período.",
