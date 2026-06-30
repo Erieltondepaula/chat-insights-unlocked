@@ -210,7 +210,7 @@ Retorne o JSON neste formato exato:
         method: "POST",
         headers: { "content-type": "application/json", "Lovable-API-Key": apiKey },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-lite",
+          model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: sys },
             { role: "user", content: userMsg },
