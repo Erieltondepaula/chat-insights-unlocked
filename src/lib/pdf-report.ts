@@ -755,7 +755,7 @@ function renderListBox(doc: jsPDF, title: string, items: string[], x: number, y:
   }
   items.forEach((it) => {
     const lines = doc.splitTextToSize(`• ${sanitize(it)}`, w);
-    lines.forEach((ln) => {
+    lines.forEach((ln: string) => {
       y = ensureSpace(doc, y, 12, x);
       doc.text(ln, x, y);
       y += 11.5;
