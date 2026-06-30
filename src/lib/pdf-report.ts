@@ -100,17 +100,31 @@ function sanitize(input: string): string {
   if (!input) return "";
   let s = input;
 
-  // Correção gramatical secundária forçada
+  // Correção gramatical secundária
   s = s.replace(/clienta/gi, "cliente");
   s = s.replace(/Clienta/g, "Cliente");
 
-  // Expansão da blindagem de caracteres corrompidos e códigos quebrados
-  s = s.replace(/\\?emptyset[^\s]*/gi, "");
-  s = s.replace(/[Øø]=?[ßÝâá\d]*/g, "");
-  s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
+  // 1) Remove emojis (surrogate pairs + BMP pictográficos) e marcas de variation/zwj
   s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "");
-  s = s.replace(/[\u2600-\u27BF\u2300-\u23FF\u2B00-\u2BFF\u3000-\u303F]/g, "");
-  s = s.replace(/[^\x20-\x7EÀ-ÿ\s•°–—,.:;?!()""']/g, "");
+  s = s.replace(
+    /[\u2300-\u23FF\u2460-\u24FF\u25A0-\u27BF\u2900-\u29FF\u2B00-\u2BFF\u3000-\u303F\uFE00-\uFE0F\uFE30-\uFE4F]/g,
+    "",
+  );
+  s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
+
+  // 2) Remove sequências corrompidas do tipo "Ø=ßâ", "Ø=Ý4" e prefixos colados (com & opcionais)
+  s = s.replace(/[ØøÝý][=\-]?[A-Za-zÀ-ÿ0-9&áàâãéêíóôõúç]{0,8}/g, "");
+  s = s.replace(/\\?emptyset[^\s]*/gi, "");
+
+  // 3) Colapsa padrão "&-spaced" gerado por encoding quebrado (ex: "A&ç&õ&e&s")
+  s = s.replace(/([A-Za-zÀ-ÿ])(?:&\s?([A-Za-zÀ-ÿ]))+/g, (m) => m.replace(/&\s?/g, ""));
+  s = s.replace(/\s&\s/g, " ");
+  s = s.replace(/&{2,}/g, " ");
+
+  // 4) Remove caracteres fora do conjunto suportado pelo Helvetica do jsPDF
+  s = s.replace(/[^\x20-\x7EÀ-ÿ\s•°–—,.:;?!()""''\-]/g, "");
+  s = s.replace(/\s{2,}/g, " ").trim();
+
   s = flowify(s);
   s = s.replace(/\b(Flow)(\s+Flow)+\b/gi, "Flow");
   return s;
