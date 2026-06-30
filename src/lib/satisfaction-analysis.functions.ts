@@ -219,17 +219,32 @@ Retorne o JSON neste formato exato:
           response_format: { type: "json_object" },
         }),
       });
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        console.error("[satisfaction] gateway error", resp.status, await resp.text().catch(() => ""));
+        return null;
+      }
       const json = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
       const raw = json.choices?.[0]?.message?.content ?? "";
-      const clean = raw.replace(/^```json\s*|\s*```$/g, "").trim();
-      const parsed = JSON.parse(clean) as SatisfactionAnalysis;
+      // Extrai o primeiro bloco JSON do conteúdo (resiliente a fences e prosa)
+      const fenced = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/i);
+      const candidate = (fenced ? fenced[1] : raw).trim();
+      const start = candidate.indexOf("{");
+      const end = candidate.lastIndexOf("}");
+      const clean = start >= 0 && end > start ? candidate.slice(start, end + 1) : candidate;
+      let parsed: SatisfactionAnalysis;
+      try {
+        parsed = JSON.parse(clean) as SatisfactionAnalysis;
+      } catch (e) {
+        console.error("[satisfaction] JSON parse failed", (e as Error).message, raw.slice(0, 400));
+        return null;
+      }
 
       parsed.mainReasons = Array.isArray(parsed.mainReasons) ? parsed.mainReasons.slice(0, 6) : [];
       parsed.score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
       parsed.confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
       return parsed;
-    } catch {
+    } catch (e) {
+      console.error("[satisfaction] unexpected error", (e as Error).message);
       return null;
     }
   });
