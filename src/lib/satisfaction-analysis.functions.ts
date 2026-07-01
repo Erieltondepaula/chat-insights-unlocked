@@ -133,6 +133,8 @@ REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
 3. FIM DO VÍCIO DE PADRÃO: Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "Excelente" ou "Atencao/Estabilizado" (nunca "Critico" se tudo já foi resolvido).
 4. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...". Escreva resumos e narrativas de forma fluida, natural e gerencial.
 5. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
+6. CHURN COM EVIDÊNCIA OBJETIVA: NUNCA declare risco de churn, "propensão ao cancelamento", "confiança quebrada" ou "atendimento crítico" com base em UMA única frase de urgência, cobrança ou frustração isolada. Só emita "churnSignals" quando houver evidência concreta: menção explícita de cancelar/rescindir contrato, reincidência de reclamações (>=3), pendências relevantes sem retorno, ou pctResolucao < 70%. Se pendências=0 e resolução>=90% e sem menção de cancelamento, "churnRisk" DEVE ser "baixo" e "churnSignals" DEVE ser lista vazia.
+7. CONCLUSÕES PROPORCIONAIS: Afirmações fortes (crítico, propenso a cancelar) exigem evidência recorrente e demonstrável em toda a jornada, não uma frase pontual.
 
 SAÍDA: Retorne APENAS o objeto JSON puro e válido, sem blocos de markdown (\`\`\`json).`;
 
