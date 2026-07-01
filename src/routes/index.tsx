@@ -663,11 +663,11 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
                 />
                 <input
                   className={`${inputCls} col-span-8`}
-                  value={d.titleLabel}
-                  placeholder="Título"
+                  value={d.requester}
+                  placeholder="Solicitante"
                   onChange={(e) => {
                     const n = [...draft.demands];
-                    n[i] = { ...n[i], titleLabel: e.target.value };
+                    n[i] = { ...n[i], requester: e.target.value };
                     set("demands", n);
                   }}
                 />
@@ -683,54 +683,68 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
                   ✕
                 </button>
               </div>
-              <Field label="Demandas do Cliente — problema/solicitação">
+              <Field label="Solicitação do Cliente — resumo">
                 <textarea
                   className={textareaCls}
                   rows={2}
-                  value={d.clientDemand}
+                  value={d.demandSummary}
                   onChange={(e) => {
                     const n = [...draft.demands];
-                    n[i] = { ...n[i], clientDemand: e.target.value };
+                    n[i] = { ...n[i], demandSummary: e.target.value };
                     set("demands", n);
                   }}
                 />
               </Field>
-              <Field label="Relatos, observações e trechos relevantes">
+              <Field label="Frases importantes (uma por linha)">
                 <textarea
                   className={textareaCls}
                   rows={2}
-                  value={`${d.clientReports}\n${d.relevantQuotes}`.trim()}
+                  value={(d.keyQuotes ?? []).join("\n")}
                   onChange={(e) => {
-                    const [clientReports, ...rest] = e.target.value.split("\n");
                     const n = [...draft.demands];
-                    n[i] = { ...n[i], clientReports, relevantQuotes: rest.join("\n") };
+                    n[i] = { ...n[i], keyQuotes: e.target.value.split("\n").filter(Boolean) };
                     set("demands", n);
                   }}
                 />
               </Field>
-              <Field label="Retorno/Ações Realizadas">
+              <Field label="Devolutiva do Suporte — resumo">
                 <textarea
                   className={textareaCls}
                   rows={2}
-                  value={d.supportActions}
+                  value={d.responseSummary}
                   onChange={(e) => {
                     const n = [...draft.demands];
-                    n[i] = { ...n[i], supportActions: e.target.value };
+                    n[i] = { ...n[i], responseSummary: e.target.value };
                     set("demands", n);
                   }}
                 />
               </Field>
-              <Field label="Resultados dos testes ou validações">
-                <textarea
-                  className={textareaCls}
-                  rows={2}
-                  value={d.supportResults}
-                  onChange={(e) => {
-                    const n = [...draft.demands];
-                    n[i] = { ...n[i], supportResults: e.target.value };
-                    set("demands", n);
-                  }}
-                />
+              <Field label="Solução apresentada / Status">
+                <div className="grid grid-cols-2 gap-2">
+                  <textarea
+                    className={textareaCls}
+                    rows={2}
+                    placeholder="Solução"
+                    value={d.solution}
+                    onChange={(e) => {
+                      const n = [...draft.demands];
+                      n[i] = { ...n[i], solution: e.target.value };
+                      set("demands", n);
+                    }}
+                  />
+                  <textarea
+                    className={textareaCls}
+                    rows={2}
+                    placeholder="Status / Próximos passos"
+                    value={`${d.status}${d.nextSteps ? " | " + d.nextSteps : ""}`}
+                    onChange={(e) => {
+                      const [status, ...rest] = e.target.value.split("|");
+                      const n = [...draft.demands];
+                      n[i] = { ...n[i], status: status.trim(), nextSteps: rest.join("|").trim() };
+                      set("demands", n);
+                    }}
+                  />
+                </div>
               </Field>
             </div>
           ))}
@@ -741,12 +755,15 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
                 ...draft.demands,
                 {
                   dateLabel: "",
-                  titleLabel: "",
-                  clientDemand: "",
-                  clientReports: "",
-                  relevantQuotes: "",
-                  supportActions: "",
-                  supportResults: "",
+                  requester: "",
+                  demandSummary: "",
+                  keyQuotes: [],
+                  problem: "",
+                  responder: "",
+                  responseSummary: "",
+                  solution: "",
+                  status: "",
+                  nextSteps: "",
                 },
               ])
             }
