@@ -133,6 +133,8 @@ REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
 3. FIM DO VÍCIO DE PADRÃO: Se as pendências ('stats.pendentes') forem iguais a 0, a Saúde do Atendimento ("health.label") DEVE ser classificada como "Excelente" ou "Atencao/Estabilizado" (nunca "Critico" se tudo já foi resolvido).
 4. SEM JARGÕES DE REPETIÇÃO: Banido usar expressões repetitivas como "O contato reforça a necessidade...", "A tratativa segue acompanhada por...". Escreva resumos e narrativas de forma fluida, natural e gerencial.
 5. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
+6. CHURN COM EVIDÊNCIA OBJETIVA: NUNCA declare risco de churn, "propensão ao cancelamento", "confiança quebrada" ou "atendimento crítico" com base em UMA única frase de urgência, cobrança ou frustração isolada. Só emita "churnSignals" quando houver evidência concreta: menção explícita de cancelar/rescindir contrato, reincidência de reclamações (>=3), pendências relevantes sem retorno, ou pctResolucao < 70%. Se pendências=0 e resolução>=90% e sem menção de cancelamento, "churnRisk" DEVE ser "baixo" e "churnSignals" DEVE ser lista vazia.
+7. CONCLUSÕES PROPORCIONAIS: Afirmações fortes (crítico, propenso a cancelar) exigem evidência recorrente e demonstrável em toda a jornada, não uma frase pontual.
 
 SAÍDA: Retorne APENAS o objeto JSON puro e válido, sem blocos de markdown (\`\`\`json).`;
 
@@ -242,6 +244,68 @@ Retorne o JSON neste formato exato:
       parsed.mainReasons = Array.isArray(parsed.mainReasons) ? parsed.mainReasons.slice(0, 6) : [];
       parsed.score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
       parsed.confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
+
+      // ============ RECÁLCULO CONTEXTUAL DE CHURN ============
+      // Uma única frase de urgência/cobrança NÃO deve gerar risco de churn
+      // quando o atendimento apresenta indicadores objetivamente saudáveis.
+      const totalDem = data.stats.total || 0;
+      const pctResol = totalDem > 0 ? (data.stats.resolvidas / totalDem) * 100 : 0;
+      const pend = data.stats.pendentes || 0;
+      const complaints = Number(parsed.complaintsCount) || 0;
+      const repeated = Number(parsed.repeatedRequestsCount) || 0;
+      const declaredSignals = Array.isArray(parsed.auditReport?.churnSignals)
+        ? parsed.auditReport!.churnSignals.length
+        : 0;
+
+      const convLower = data.conversationText.toLowerCase();
+      const hasExplicitCancel =
+        /(cancelar\s+(o\s+)?(contrato|servi[çc]o|assinatura|plano)|rescis[ãa]o|encerrar\s+(o\s+)?contrato|n[ãa]o\s+quero\s+mais|vou\s+cancelar|desistir\s+do\s+servi[çc]o|migrar\s+para\s+outro|trocar\s+de\s+fornecedor)/i.test(
+          convLower,
+        );
+
+      const pendRatio = totalDem > 0 ? pend / totalDem : 0;
+      const strongSignals =
+        (pendRatio > 0.1 || pend >= 3 ? 1 : 0) +
+        (totalDem > 0 && pctResol < 70 ? 1 : 0) +
+        (repeated >= 3 ? 1 : 0) +
+        (complaints >= 3 ? 1 : 0) +
+        (hasExplicitCancel ? 2 : 0);
+
+      const healthy =
+        totalDem > 0 && pend === 0 && pctResol >= 90 && complaints <= 1 && !hasExplicitCancel;
+
+      if (healthy) {
+        parsed.churnRisk = "baixo";
+        if (parsed.auditReport) parsed.auditReport.churnSignals = [];
+      } else if (strongSignals >= 3) {
+        parsed.churnRisk = "alto";
+      } else if (strongSignals >= 1) {
+        parsed.churnRisk = "medio";
+      } else if (declaredSignals <= 1) {
+        parsed.churnRisk = "baixo";
+        if (parsed.auditReport) parsed.auditReport.churnSignals = [];
+      }
+
+      if (parsed.churnRisk === "baixo") {
+        const alarmRe =
+          /[^.!?]*\b(risco de churn|propens[ãa]o (ao|a) cancelamento|confian[çc]a foi quebrada|atendimento cr[íi]tico|cliente cr[íi]tico|risco de cancelamento|sinal\(is\)? detectado)\b[^.!?]*[.!?]?/gi;
+        if (parsed.executiveSummary)
+          parsed.executiveSummary = parsed.executiveSummary.replace(alarmRe, "").replace(/\s{2,}/g, " ").trim();
+        if (parsed.consolidatedSummary)
+          parsed.consolidatedSummary = parsed.consolidatedSummary
+            .replace(alarmRe, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+        parsed.mainReasons = parsed.mainReasons.filter((r) => {
+          alarmRe.lastIndex = 0;
+          return !alarmRe.test(r);
+        });
+        if (parsed.auditReport?.conclusion) {
+          parsed.auditReport.conclusion.willChurn =
+            "Não há evidências objetivas de propensão ao cancelamento no período analisado.";
+        }
+      }
+
       return parsed;
     } catch (e) {
       console.error("[satisfaction] unexpected error", (e as Error).message);
