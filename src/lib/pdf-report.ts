@@ -489,33 +489,6 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   const contentW = pageW - margin * 2;
   let y = margin;
 
-  doc.setTextColor(...NAVY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(sanitize(draft.title), margin, y + 18);
-  y += 28;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...MUTED);
-  doc.text(sanitize(draft.subtitle), margin, y);
-  y += 16;
-
-  // ===== Fallback executivo (sempre renderizado) =====
-  y = sectionTitle(doc, "1. Painel Executivo do Atendimento", margin, y);
-  autoTable(doc, {
-    startY: y,
-    head: [["Indicador", "Valor"]],
-    body: [
-      ["Cliente", sanitize(draft.clientName)],
-export function generatePdf(draft: ReportDraft): jsPDF {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const margin = 48;
-  const contentW = pageW - margin * 2;
-  let y = margin;
-
   const ar = draft.satisfaction?.auditReport;
 
   // Normaliza health quando não há pendências
