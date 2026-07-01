@@ -242,6 +242,68 @@ Retorne o JSON neste formato exato:
       parsed.mainReasons = Array.isArray(parsed.mainReasons) ? parsed.mainReasons.slice(0, 6) : [];
       parsed.score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
       parsed.confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
+
+      // ============ RECÁLCULO CONTEXTUAL DE CHURN ============
+      // Uma única frase de urgência/cobrança NÃO deve gerar risco de churn
+      // quando o atendimento apresenta indicadores objetivamente saudáveis.
+      const totalDem = data.stats.total || 0;
+      const pctResol = totalDem > 0 ? (data.stats.resolvidas / totalDem) * 100 : 0;
+      const pend = data.stats.pendentes || 0;
+      const complaints = Number(parsed.complaintsCount) || 0;
+      const repeated = Number(parsed.repeatedRequestsCount) || 0;
+      const declaredSignals = Array.isArray(parsed.auditReport?.churnSignals)
+        ? parsed.auditReport!.churnSignals.length
+        : 0;
+
+      const convLower = data.conversationText.toLowerCase();
+      const hasExplicitCancel =
+        /(cancelar\s+(o\s+)?(contrato|servi[çc]o|assinatura|plano)|rescis[ãa]o|encerrar\s+(o\s+)?contrato|n[ãa]o\s+quero\s+mais|vou\s+cancelar|desistir\s+do\s+servi[çc]o|migrar\s+para\s+outro|trocar\s+de\s+fornecedor)/i.test(
+          convLower,
+        );
+
+      const pendRatio = totalDem > 0 ? pend / totalDem : 0;
+      const strongSignals =
+        (pendRatio > 0.1 || pend >= 3 ? 1 : 0) +
+        (totalDem > 0 && pctResol < 70 ? 1 : 0) +
+        (repeated >= 3 ? 1 : 0) +
+        (complaints >= 3 ? 1 : 0) +
+        (hasExplicitCancel ? 2 : 0);
+
+      const healthy =
+        totalDem > 0 && pend === 0 && pctResol >= 90 && complaints <= 1 && !hasExplicitCancel;
+
+      if (healthy) {
+        parsed.churnRisk = "baixo";
+        if (parsed.auditReport) parsed.auditReport.churnSignals = [];
+      } else if (strongSignals >= 3) {
+        parsed.churnRisk = "alto";
+      } else if (strongSignals >= 1) {
+        parsed.churnRisk = "medio";
+      } else if (declaredSignals <= 1) {
+        parsed.churnRisk = "baixo";
+        if (parsed.auditReport) parsed.auditReport.churnSignals = [];
+      }
+
+      if (parsed.churnRisk === "baixo") {
+        const alarmRe =
+          /[^.!?]*\b(risco de churn|propens[ãa]o (ao|a) cancelamento|confian[çc]a foi quebrada|atendimento cr[íi]tico|cliente cr[íi]tico|risco de cancelamento|sinal\(is\)? detectado)\b[^.!?]*[.!?]?/gi;
+        if (parsed.executiveSummary)
+          parsed.executiveSummary = parsed.executiveSummary.replace(alarmRe, "").replace(/\s{2,}/g, " ").trim();
+        if (parsed.consolidatedSummary)
+          parsed.consolidatedSummary = parsed.consolidatedSummary
+            .replace(alarmRe, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+        parsed.mainReasons = parsed.mainReasons.filter((r) => {
+          alarmRe.lastIndex = 0;
+          return !alarmRe.test(r);
+        });
+        if (parsed.auditReport?.conclusion) {
+          parsed.auditReport.conclusion.willChurn =
+            "Não há evidências objetivas de propensão ao cancelamento no período analisado.";
+        }
+      }
+
       return parsed;
     } catch (e) {
       console.error("[satisfaction] unexpected error", (e as Error).message);
