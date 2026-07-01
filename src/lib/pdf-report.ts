@@ -37,12 +37,15 @@ export type Envolvido = { name: string; org: string; role: string };
 
 export type DemandItem = {
   dateLabel: string;
-  titleLabel: string;
-  clientDemand: string;
-  clientReports: string;
-  relevantQuotes: string;
-  supportActions: string;
-  supportResults: string;
+  requester: string;
+  demandSummary: string;
+  keyQuotes: string[];
+  problem: string;
+  responder: string;
+  responseSummary: string;
+  solution: string;
+  status: string;
+  nextSteps: string;
 };
 
 export type ReportMetrics = {
