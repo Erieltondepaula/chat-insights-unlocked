@@ -398,45 +398,72 @@ function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
   return sortedKeys.map((key, idx) => buildOneBlock(key, grouped.get(key)!, insightMap, idx === sortedKeys.length - 1));
 }
 
-function buildOneBlock(key: string, items: Demand[], insightMap: InsightMap, isLast: boolean): DemandItem {
+function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _isLast: boolean): DemandItem {
   const date = new Date(`${key}T12:00:00`);
   const cleanedItems = items.map((d) => {
     const r = stripMediaTokens(d.message);
     const rr = d.resolutionMessage ? stripMediaTokens(d.resolutionMessage) : { text: "", filenames: [], kinds: [] };
-    return {
-      ...d,
-      cleanText: r.text,
-      filenames: r.filenames,
-      cleanResolution: rr.text,
-      resolutionFilenames: rr.filenames,
-    };
+    return { ...d, cleanText: r.text, cleanResolution: rr.text };
   });
 
-  const seenDemand = new Set<string>();
-  const demandSentences: string[] = [];
+  const requester = sanitize(items[0]?.requester ?? "Cliente");
+
+  // Consolida solicitações repetidas
+  const demandCounts = new Map<string, number>();
   for (const ci of cleanedItems) {
-    if (ci.cleanText && !seenDemand.has(ci.cleanText.slice(0, 80))) {
-      seenDemand.add(ci.cleanText.slice(0, 80));
-      demandSentences.push(ci.cleanText);
+    const t = ci.cleanText.trim();
+    if (!t) continue;
+    demandCounts.set(t, (demandCounts.get(t) ?? 0) + 1);
+  }
+  const demandSummary = [...demandCounts.entries()]
+    .map(([t, n]) => (n > 1 ? `${t} (reforçado em ${n} mensagens)` : t))
+    .join(" ")
+    .slice(0, 900);
+
+  // Extrai frases-chave (urgência/reclamação/decisão)
+  const keyQuotes: string[] = [];
+  const quoteRe = /(urg[eê]ncia|urgente|preciso|est[aá] tudo errado|combinamos|prometeram?|j[aá] avis[ea]i|h[aá] mais de|n[aã]o funciona|erro|bug|cancelar|rescis[aã]o)/i;
+  for (const ci of cleanedItems) {
+    if (ci.cleanText && quoteRe.test(ci.cleanText) && keyQuotes.length < 3) {
+      keyQuotes.push(ci.cleanText.slice(0, 220));
     }
   }
 
-  const dateLabel = isLast ? `No dia ${fmtDateOnly(date)} (recente):` : `No dia ${fmtDateOnly(date)}:`;
-  const responses = cleanedItems
-    .filter((d) => d.status === "resolvido")
-    .map((r) => ({
-      who: r.resolvedBy || "Suporte",
-      text: r.cleanResolution || "Ajuste operacional concluído.",
-    }));
+  // Consolida devolutivas repetidas
+  const resItems = cleanedItems.filter((d) => d.status === "resolvido");
+  const respCounts = new Map<string, { who: string; count: number }>();
+  for (const r of resItems) {
+    const text = r.cleanResolution || "Ajuste operacional concluído.";
+    const who = r.resolvedBy || "Suporte";
+    const kkey = `${who}::${text}`;
+    const cur = respCounts.get(kkey);
+    respCounts.set(kkey, { who, count: (cur?.count ?? 0) + 1 });
+  }
+  const respondersSet = new Set<string>();
+  const responseParts: string[] = [];
+  for (const [kk, meta] of respCounts.entries()) {
+    respondersSet.add(meta.who);
+    const text = kk.split("::").slice(1).join("::");
+    responseParts.push(meta.count > 1 ? `${text} (informado em ${meta.count} mensagens)` : text);
+  }
+  const responder = respondersSet.size ? [...respondersSet].join(", ") : "—";
+  const responseSummary = responseParts.join(" ").slice(0, 900) || "Sem devolutiva registrada.";
+
+  const pendCount = cleanedItems.filter((d) => d.status === "pendente").length;
+  const status = pendCount > 0 ? `Pendente (${pendCount})` : "Resolvido";
+  const solution = resItems.length ? "Ajuste/parametrização aplicada pela equipe Amigo Flow." : "—";
 
   return {
-    dateLabel,
-    titleLabel: "",
-    clientDemand: `No dia ${fmtDateOnly(date)} d${items[0]?.requester ? ` o cliente ${sanitize(items[0].requester)}` : "o contratante"} reportou: ${demandSentences.join(" ")}`,
-    clientReports: "",
-    relevantQuotes: "",
-    supportActions: `Retorno: ${responses.map((r) => `[${r.who}] ${r.text}`).join(" ")}`,
-    supportResults: "",
+    dateLabel: fmtDateOnly(date),
+    requester,
+    demandSummary: demandSummary || "Interação sem conteúdo operacional relevante.",
+    keyQuotes,
+    problem: demandSummary.slice(0, 160),
+    responder,
+    responseSummary,
+    solution,
+    status,
+    nextSteps: pendCount > 0 ? "Aguardando retorno / homologação." : "",
   };
 }
 
