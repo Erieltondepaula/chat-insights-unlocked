@@ -164,7 +164,7 @@ Retorne o JSON neste formato exato:
   "churnRisk": "baixo|medio|alto",
   "mainReasons": ["motivos objetivos"],
   "executiveSummary": "frases gerenciais realistas",
-  "consolidatedSummary": "P1\\n\\nP2\\n\\nP3",
+  "consolidatedSummary": "P1\\n\\nP2\\n\\nP3\\n\\nP4\\n\\nP5",
   "auditReport": {
     "participants": [{"name":"Nome ou Cargo","org":"Organização","role":"Atribuição Real (Sempre Cliente ou Suporte)"}],
     "timeline": [{"date":"DD/MM/AAAA","category":"critico|duvida|ajuste|configuracao|orientacao|info","summary":"resumo natural","supportResponse":"ação técnica","status":"Resolvido|Pendente|Em análise"}],
