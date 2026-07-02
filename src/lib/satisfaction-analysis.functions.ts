@@ -143,6 +143,10 @@ REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
    • Parágrafo 5 — Recomendação executiva para os times de Churn, Gerente de Conta e Implantação. Diga claramente se o módulo atende ou não a clínica, quais ações imediatas devem ser tomadas, e quais indicadores devem ser monitorados nas próximas semanas.
    As citações devem ser reais (extraídas literalmente do texto da conversa recebida), não inventadas. Se não encontrar citação para uma seção, escreva "Sem registro literal correspondente no período." em vez de fabricar.
 
+SAÍDA: Retorne APENAS o objeto JSON puro e válido, sem blocos de markdown (\`\`\`json).`;
+
+
+
     const userMsg = `CLIENTE: ${data.clientName || "(não informado)"} — referência: ${clienteRef}
 PERÍODO: ${data.stats.firstDate ?? "—"} a ${data.stats.lastDate ?? "—"}
 DEMANDAS: ${data.stats.total} total | ${data.stats.resolvidas} resolvidas | ${data.stats.pendentes} pendentes
