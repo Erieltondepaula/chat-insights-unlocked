@@ -135,8 +135,17 @@ REGRAS CRÍTICAS DE ENCODING E NARRATIVA:
 5. TELEFONES: Nunca exiba números brutos (+55...). Troque-os pelos nomes ou cargos correspondentes das pessoas envolvidas.
 6. CHURN COM EVIDÊNCIA OBJETIVA: NUNCA declare risco de churn, "propensão ao cancelamento", "confiança quebrada" ou "atendimento crítico" com base em UMA única frase de urgência, cobrança ou frustração isolada. Só emita "churnSignals" quando houver evidência concreta: menção explícita de cancelar/rescindir contrato, reincidência de reclamações (>=3), pendências relevantes sem retorno, ou pctResolucao < 70%. Se pendências=0 e resolução>=90% e sem menção de cancelamento, "churnRisk" DEVE ser "baixo" e "churnSignals" DEVE ser lista vazia.
 7. CONCLUSÕES PROPORCIONAIS: Afirmações fortes (crítico, propenso a cancelar) exigem evidência recorrente e demonstrável em toda a jornada, não uma frase pontual.
+8. RESUMO CONSOLIDADO PROFUNDO: O campo "consolidatedSummary" DEVE conter EXATAMENTE 5 parágrafos, separados por linha em branco (\\n\\n). Cada parágrafo DEVE ter no MÍNIMO 1000 caracteres (mire 1100-1400). Não resuma apenas as últimas duas semanas — cubra TODO o histórico da conversa fornecida. Estrutura obrigatória:
+   • Parágrafo 1 — Contexto geral do relacionamento, evolução do cliente no período, principais módulos envolvidos, perfil operacional da clínica.
+   • Parágrafo 2 — DORES do cliente detalhadas: liste as principais dificuldades técnicas, operacionais e emocionais. Inclua AO MENOS 2 citações literais entre aspas ("...") extraídas da conversa demonstrando reclamações, dúvidas ou frustrações.
+   • Parágrafo 3 — Reincidências, gargalos, limitações do produto encontradas, comportamento do suporte diante das demandas críticas. Inclua AO MENOS 1 citação literal do cliente entre aspas.
+   • Parágrafo 4 — MOMENTOS POSITIVOS: satisfação, elogios, ganhos, agradecimentos, conquistas do suporte. Inclua AO MENOS 1 citação literal de elogio ou satisfação entre aspas (se não houver, indicar objetivamente a ausência).
+   • Parágrafo 5 — Recomendação executiva para os times de Churn, Gerente de Conta e Implantação. Diga claramente se o módulo atende ou não a clínica, quais ações imediatas devem ser tomadas, e quais indicadores devem ser monitorados nas próximas semanas.
+   As citações devem ser reais (extraídas literalmente do texto da conversa recebida), não inventadas. Se não encontrar citação para uma seção, escreva "Sem registro literal correspondente no período." em vez de fabricar.
 
 SAÍDA: Retorne APENAS o objeto JSON puro e válido, sem blocos de markdown (\`\`\`json).`;
+
+
 
     const userMsg = `CLIENTE: ${data.clientName || "(não informado)"} — referência: ${clienteRef}
 PERÍODO: ${data.stats.firstDate ?? "—"} a ${data.stats.lastDate ?? "—"}
@@ -164,7 +173,7 @@ Retorne o JSON neste formato exato:
   "churnRisk": "baixo|medio|alto",
   "mainReasons": ["motivos objetivos"],
   "executiveSummary": "frases gerenciais realistas",
-  "consolidatedSummary": "P1\\n\\nP2\\n\\nP3",
+  "consolidatedSummary": "P1\\n\\nP2\\n\\nP3\\n\\nP4\\n\\nP5",
   "auditReport": {
     "participants": [{"name":"Nome ou Cargo","org":"Organização","role":"Atribuição Real (Sempre Cliente ou Suporte)"}],
     "timeline": [{"date":"DD/MM/AAAA","category":"critico|duvida|ajuste|configuracao|orientacao|info","summary":"resumo natural","supportResponse":"ação técnica","status":"Resolvido|Pendente|Em análise"}],

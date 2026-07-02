@@ -607,8 +607,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = renderQuadrant(doc, "Limitacoes do Produto Declaradas", ar.supportBehavior?.limitations ?? [], BLUE, margin, y, contentW);
     y = renderQuadrant(doc, "Silencios, Demoras e Gargalos", ar.supportBehavior?.silences ?? [], ALERT_BORDER, margin, y, contentW);
 
-    // ============ 6. INDICADORES EXECUTIVOS ============
-    y = sectionTitle(doc, "6. Painel de Indicadores Executivos", margin, y);
+    // ============ 6. SENTIMENTOS E SATISFAÇÃO DO CLIENTE ============
+    y = renderSentimentSection(doc, draft, margin, y, contentW);
+
+    // ============ 7. CLASSIFICAÇÃO ANALÍTICA DOS CHAMADOS ============
+    y = sectionTitle(doc, "7. Classificacao Analitica dos Chamados", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Indicador", "Quantidade"]],
@@ -627,7 +630,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = (doc as any).lastAutoTable.finalY + 14;
 
     // ============ 7. SAUDE / EVOLUCAO / ESFORCO ============
-    y = sectionTitle(doc, "7. Saude, Evolucao e Esforco", margin, y);
+    y = sectionTitle(doc, "8. Saude, Evolucao e Esforco", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Indicador", "Classificacao", "Justificativa"]],
@@ -646,7 +649,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
     // ============ 8. MAPEAMENTO EMOCIONAL ============
     if (ar.emotionalMoments?.length) {
-      y = sectionTitle(doc, "8. Mapeamento Emocional do Cliente", margin, y);
+      y = sectionTitle(doc, "9. Mapeamento Emocional do Cliente", margin, y);
       autoTable(doc, {
         startY: y,
         head: [["Emocao", "Confianca", "Data", "Mensagem do Cliente", "Motivo"]],
@@ -667,7 +670,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
     // ============ 9. LINHA DO TEMPO DO HUMOR ============
     if (ar.humorTimeline?.length) {
-      y = sectionTitle(doc, "9. Linha do Tempo do Humor", margin, y);
+      y = sectionTitle(doc, "10. Linha do Tempo do Humor", margin, y);
       const humorLabel = (em: string) => {
         const cleanEm = String(em).trim();
         if (/😊|🙂|feliz|satisf/i.test(cleanEm)) return "Satisfeito";
@@ -689,7 +692,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
 
     // ============ 10. CSAT ANALITICO ============
-    y = sectionTitle(doc, "10. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
+    y = sectionTitle(doc, "11. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
     const csatScore = ar.csat?.score ?? Math.round(draft.metrics.pctResolucao);
     y = ensureSpace(doc, y, 70, margin);
     doc.setFillColor(...INFO_BG);
@@ -719,7 +722,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       draft.satisfaction?.churnRisk === "baixo" ||
       draft.metrics.pctResolucao >= 95;
     if (!churnSuppress && ar.churnSignals?.length) {
-      y = sectionTitle(doc, "11. Alerta de Risco de Churn", margin, y);
+      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
       ar.churnSignals.forEach((s, idx) => {
         y = ensureSpace(doc, y, 60, margin);
         doc.setFillColor(...ALERT_BG);
@@ -741,7 +744,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         y += 62;
       });
     } else {
-      y = sectionTitle(doc, "11. Alerta de Risco de Churn", margin, y);
+      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
       y = paragraph(
         doc,
         "Nao foram encontrados indicios objetivos suficientes de risco de churn no periodo analisado.",
@@ -753,7 +756,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
 
     // ============ 12. DIAGNOSTICO FINAL ============
-    y = sectionTitle(doc, "12. Diagnostico Final", margin, y);
+    y = sectionTitle(doc, "13. Diagnostico Final", margin, y);
     y = renderListBox(doc, "Pontos Positivos", ar.diagnosis?.strengths ?? [], margin, y, contentW);
     y = renderListBox(doc, "Pontos de Atencao", ar.diagnosis?.attentionPoints ?? [], margin, y, contentW);
     y = renderListBox(doc, "Oportunidades — Produto", ar.diagnosis?.opportunities?.product ?? [], margin, y, contentW);
@@ -761,7 +764,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = renderListBox(doc, "Oportunidades — Processo", ar.diagnosis?.opportunities?.process ?? [], margin, y, contentW);
 
     // ============ 13. PLANO DE ACAO ============
-    y = sectionTitle(doc, "13. Plano de Acao e Proximos Passos", margin, y);
+    y = sectionTitle(doc, "14. Plano de Acao e Proximos Passos", margin, y);
     y = renderListBox(
       doc,
       "Proximos Passos Imediatos",
@@ -778,24 +781,24 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
   }
 
-  // ============ 14. INDICADORES VISUAIS ============
-  y = sectionTitle(doc, `${ar ? "14" : "5"}. Indicadores Visuais`, margin, y);
+  // ============ 15. INDICADORES VISUAIS ============
+  y = sectionTitle(doc, `${ar ? "15" : "5"}. Indicadores Visuais`, margin, y);
   y = renderVisualIndicators(doc, draft, margin, y, contentW);
 
-  // ============ 15. RESUMO CONSOLIDADO (final, em paragrafos) ============
-  y = sectionTitle(doc, `${ar ? "15" : "6"}. Resumo Consolidado do Atendimento`, margin, y);
+  // ============ 16. RESUMO CONSOLIDADO (final, em paragrafos) ============
+  y = sectionTitle(doc, `${ar ? "16" : "6"}. Resumo Consolidado do Atendimento`, margin, y);
   const consolidated = sanitize(draft.consolidatedSummary || "");
   const paragraphs = consolidated
-    .split(/\n{2,}|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ])/)
-    .map((p) => p.trim())
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 5);
   if (!paragraphs.length) {
     y = paragraph(doc, "Analise consolidada nao disponivel para este atendimento.", margin, y, contentW, 10);
   } else {
     for (const p of paragraphs) {
-      y = paragraph(doc, p.slice(0, 2000), margin, y, contentW, 10);
-      y += 4;
+      y = paragraph(doc, p.slice(0, 2000), margin, y, contentW, 9.5);
+      y += 8;
     }
   }
 
@@ -1111,3 +1114,129 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number, minContentAft
 function inferThemes(a: Analysis): string[] {
   return ["Ajustes de Fluxo e Validacao Operacional"];
 }
+
+function sentimentLabel(s?: string): { label: string; color: [number, number, number] } {
+  switch (s) {
+    case "muito_satisfeito":
+      return { label: "Muito Satisfeito", color: [34, 120, 60] };
+    case "satisfeito":
+      return { label: "Satisfeito", color: [46, 139, 87] };
+    case "neutro":
+      return { label: "Neutro", color: [110, 120, 132] };
+    case "insatisfeito":
+      return { label: "Insatisfeito", color: [200, 90, 30] };
+    case "muito_insatisfeito":
+      return { label: "Muito Insatisfeito", color: ALERT_BORDER };
+    default:
+      return { label: "—", color: MUTED };
+  }
+}
+
+function riskColor(r?: string): [number, number, number] {
+  if (r === "alto") return ALERT_BORDER;
+  if (r === "medio") return [200, 150, 30];
+  return [46, 139, 87];
+}
+
+function evolutionLabel(e?: string): string {
+  if (e === "melhorou") return "Melhorou";
+  if (e === "piorou") return "Piorou";
+  return "Permaneceu";
+}
+
+function situationLabel(s?: string): string {
+  if (s === "resolvido") return "Resolvido";
+  if (s === "parcialmente_resolvido") return "Parcialmente";
+  if (s === "nao_resolvido") return "Nao Resolvido";
+  return "—";
+}
+
+function renderSentimentSection(doc: jsPDF, draft: ReportDraft, x: number, y: number, w: number): number {
+  const sat = draft.satisfaction;
+  if (!sat) return y;
+  y = sectionTitle(doc, "6. Sentimentos e Satisfacao do Cliente", x, y);
+
+  const senti = sentimentLabel(sat.sentiment);
+  const cards: [string, string, [number, number, number]][] = [
+    ["SENTIMENTO", senti.label, senti.color],
+    ["SCORE", `${sat.score}/100`, NAVY_DEEP],
+    ["CONFIANCA", `${sat.confidence}%`, [46, 139, 87]],
+    ["EMOCAO", sanitize(sat.emotion || "—"), [120, 70, 160]],
+    ["EVOLUCAO", evolutionLabel(sat.evolution), BLUE],
+    ["SITUACAO", situationLabel(sat.finalSituation), NAVY],
+    ["RISCO DE CHURN", (sat.churnRisk || "—").toUpperCase(), riskColor(sat.churnRisk)],
+    ["INTERV. HUMANA", sat.humanInterventionNeeded ? "Sim" : "Nao", sat.humanInterventionNeeded ? ALERT_BORDER : [46, 139, 87]],
+  ];
+
+  const cardW = (w - 3 * 8) / 4;
+  const cardH = 46;
+  const rows = 2;
+  y = ensureSpace(doc, y, rows * (cardH + 8) + 10, x);
+  for (let i = 0; i < cards.length; i++) {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    const cx = x + col * (cardW + 8);
+    const cy = y + row * (cardH + 8);
+    const [lbl, val, color] = cards[i];
+    doc.setFillColor(...INFO_BG);
+    doc.roundedRect(cx, cy, cardW, cardH, 3, 3, "F");
+    doc.setFillColor(...color);
+    doc.rect(cx, cy, 3, cardH, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    doc.text(lbl, cx + 8, cy + 14);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...color);
+    doc.text(sanitize(val).slice(0, 22), cx + 8, cy + 32);
+  }
+  y += rows * (cardH + 8) + 4;
+
+  // Contagens
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...TEXT);
+  y = ensureSpace(doc, y, 14, x);
+  doc.text(
+    `Reclamacoes: ${sat.complaintsCount ?? 0}  |  Elogios: ${sat.praisesCount ?? 0}  |  Solicitacoes repetidas: ${sat.repeatedRequestsCount ?? 0}`,
+    x,
+    y + 4,
+  );
+  y += 14;
+
+  // Resumo executivo
+  if (sat.executiveSummary) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...NAVY);
+    y = ensureSpace(doc, y, 14, x);
+    doc.text("Resumo da analise:", x, y);
+    y += 12;
+    y = paragraph(doc, sanitize(sat.executiveSummary), x, y, w, 9);
+  }
+
+  // Principais motivos
+  if (sat.mainReasons?.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...NAVY);
+    y = ensureSpace(doc, y, 14, x);
+    doc.text("Principais motivos:", x, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXT);
+    for (const r of sat.mainReasons) {
+      const lines = doc.splitTextToSize(`• ${sanitize(r)}`, w) as string[];
+      for (const ln of lines) {
+        y = ensureSpace(doc, y, 12, x);
+        doc.text(ln, x, y);
+        y += 11;
+      }
+    }
+  }
+
+  return y + 6;
+}
+
