@@ -1114,3 +1114,129 @@ function sectionTitle(doc: jsPDF, t: string, x: number, y: number, minContentAft
 function inferThemes(a: Analysis): string[] {
   return ["Ajustes de Fluxo e Validacao Operacional"];
 }
+
+function sentimentLabel(s?: string): { label: string; color: [number, number, number] } {
+  switch (s) {
+    case "muito_satisfeito":
+      return { label: "Muito Satisfeito", color: [34, 120, 60] };
+    case "satisfeito":
+      return { label: "Satisfeito", color: [46, 139, 87] };
+    case "neutro":
+      return { label: "Neutro", color: [110, 120, 132] };
+    case "insatisfeito":
+      return { label: "Insatisfeito", color: [200, 90, 30] };
+    case "muito_insatisfeito":
+      return { label: "Muito Insatisfeito", color: ALERT_BORDER };
+    default:
+      return { label: "—", color: MUTED };
+  }
+}
+
+function riskColor(r?: string): [number, number, number] {
+  if (r === "alto") return ALERT_BORDER;
+  if (r === "medio") return [200, 150, 30];
+  return [46, 139, 87];
+}
+
+function evolutionLabel(e?: string): string {
+  if (e === "melhorou") return "Melhorou";
+  if (e === "piorou") return "Piorou";
+  return "Permaneceu";
+}
+
+function situationLabel(s?: string): string {
+  if (s === "resolvido") return "Resolvido";
+  if (s === "parcialmente_resolvido") return "Parcialmente";
+  if (s === "nao_resolvido") return "Nao Resolvido";
+  return "—";
+}
+
+function renderSentimentSection(doc: jsPDF, draft: ReportDraft, x: number, y: number, w: number): number {
+  const sat = draft.satisfaction;
+  if (!sat) return y;
+  y = sectionTitle(doc, "6. Sentimentos e Satisfacao do Cliente", x, y);
+
+  const senti = sentimentLabel(sat.sentiment);
+  const cards: [string, string, [number, number, number]][] = [
+    ["SENTIMENTO", senti.label, senti.color],
+    ["SCORE", `${sat.score}/100`, NAVY_DEEP],
+    ["CONFIANCA", `${sat.confidence}%`, [46, 139, 87]],
+    ["EMOCAO", sanitize(sat.emotion || "—"), [120, 70, 160]],
+    ["EVOLUCAO", evolutionLabel(sat.evolution), BLUE],
+    ["SITUACAO", situationLabel(sat.finalSituation), NAVY],
+    ["RISCO DE CHURN", (sat.churnRisk || "—").toUpperCase(), riskColor(sat.churnRisk)],
+    ["INTERV. HUMANA", sat.humanInterventionNeeded ? "Sim" : "Nao", sat.humanInterventionNeeded ? ALERT_BORDER : [46, 139, 87]],
+  ];
+
+  const cardW = (w - 3 * 8) / 4;
+  const cardH = 46;
+  const rows = 2;
+  y = ensureSpace(doc, y, rows * (cardH + 8) + 10, x);
+  for (let i = 0; i < cards.length; i++) {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    const cx = x + col * (cardW + 8);
+    const cy = y + row * (cardH + 8);
+    const [lbl, val, color] = cards[i];
+    doc.setFillColor(...INFO_BG);
+    doc.roundedRect(cx, cy, cardW, cardH, 3, 3, "F");
+    doc.setFillColor(...color);
+    doc.rect(cx, cy, 3, cardH, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    doc.text(lbl, cx + 8, cy + 14);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...color);
+    doc.text(sanitize(val).slice(0, 22), cx + 8, cy + 32);
+  }
+  y += rows * (cardH + 8) + 4;
+
+  // Contagens
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...TEXT);
+  y = ensureSpace(doc, y, 14, x);
+  doc.text(
+    `Reclamacoes: ${sat.complaintsCount ?? 0}  |  Elogios: ${sat.praisesCount ?? 0}  |  Solicitacoes repetidas: ${sat.repeatedRequestsCount ?? 0}`,
+    x,
+    y + 4,
+  );
+  y += 14;
+
+  // Resumo executivo
+  if (sat.executiveSummary) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...NAVY);
+    y = ensureSpace(doc, y, 14, x);
+    doc.text("Resumo da analise:", x, y);
+    y += 12;
+    y = paragraph(doc, sanitize(sat.executiveSummary), x, y, w, 9);
+  }
+
+  // Principais motivos
+  if (sat.mainReasons?.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...NAVY);
+    y = ensureSpace(doc, y, 14, x);
+    doc.text("Principais motivos:", x, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXT);
+    for (const r of sat.mainReasons) {
+      const lines = doc.splitTextToSize(`• ${sanitize(r)}`, w) as string[];
+      for (const ln of lines) {
+        y = ensureSpace(doc, y, 12, x);
+        doc.text(ln, x, y);
+        y += 11;
+      }
+    }
+  }
+
+  return y + 6;
+}
+
