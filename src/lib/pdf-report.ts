@@ -607,8 +607,11 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = renderQuadrant(doc, "Limitacoes do Produto Declaradas", ar.supportBehavior?.limitations ?? [], BLUE, margin, y, contentW);
     y = renderQuadrant(doc, "Silencios, Demoras e Gargalos", ar.supportBehavior?.silences ?? [], ALERT_BORDER, margin, y, contentW);
 
-    // ============ 6. INDICADORES EXECUTIVOS ============
-    y = sectionTitle(doc, "6. Painel de Indicadores Executivos", margin, y);
+    // ============ 6. SENTIMENTOS E SATISFAÇÃO DO CLIENTE ============
+    y = renderSentimentSection(doc, draft, margin, y, contentW);
+
+    // ============ 7. CLASSIFICAÇÃO ANALÍTICA DOS CHAMADOS ============
+    y = sectionTitle(doc, "7. Classificacao Analitica dos Chamados", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Indicador", "Quantidade"]],
