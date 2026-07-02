@@ -789,16 +789,16 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   y = sectionTitle(doc, `${ar ? "16" : "6"}. Resumo Consolidado do Atendimento`, margin, y);
   const consolidated = sanitize(draft.consolidatedSummary || "");
   const paragraphs = consolidated
-    .split(/\n{2,}|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ])/)
-    .map((p) => p.trim())
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 5);
   if (!paragraphs.length) {
     y = paragraph(doc, "Analise consolidada nao disponivel para este atendimento.", margin, y, contentW, 10);
   } else {
     for (const p of paragraphs) {
-      y = paragraph(doc, p.slice(0, 2000), margin, y, contentW, 10);
-      y += 4;
+      y = paragraph(doc, p.slice(0, 2000), margin, y, contentW, 9.5);
+      y += 8;
     }
   }
 
