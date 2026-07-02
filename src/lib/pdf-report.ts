@@ -1066,8 +1066,10 @@ function paragraph(doc: jsPDF, text: string, x: number, y: number, w: number, si
   return y;
 }
 
-function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
-  y = ensureSpace(doc, y, 32, x);
+function sectionTitle(doc: jsPDF, t: string, x: number, y: number, minContentAfter = 100): number {
+  // Reserva espaço para o título + primeiro bloco de conteúdo,
+  // evitando que o título fique órfão no fim de uma página.
+  y = ensureSpace(doc, y, minContentAfter, x);
   doc.setFillColor(...BLUE);
   doc.rect(x, y - 2, 4, 15, "F");
   doc.setFont("helvetica", "bold");
