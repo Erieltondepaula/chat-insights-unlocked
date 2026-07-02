@@ -781,12 +781,12 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
   }
 
-  // ============ 14. INDICADORES VISUAIS ============
-  y = sectionTitle(doc, `${ar ? "14" : "5"}. Indicadores Visuais`, margin, y);
+  // ============ 15. INDICADORES VISUAIS ============
+  y = sectionTitle(doc, `${ar ? "15" : "5"}. Indicadores Visuais`, margin, y);
   y = renderVisualIndicators(doc, draft, margin, y, contentW);
 
-  // ============ 15. RESUMO CONSOLIDADO (final, em paragrafos) ============
-  y = sectionTitle(doc, `${ar ? "15" : "6"}. Resumo Consolidado do Atendimento`, margin, y);
+  // ============ 16. RESUMO CONSOLIDADO (final, em paragrafos) ============
+  y = sectionTitle(doc, `${ar ? "16" : "6"}. Resumo Consolidado do Atendimento`, margin, y);
   const consolidated = sanitize(draft.consolidatedSummary || "");
   const paragraphs = consolidated
     .split(/\n{2,}|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ])/)
