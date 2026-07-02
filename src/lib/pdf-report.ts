@@ -551,7 +551,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
     styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 4 },
     columnStyles: { 0: { cellWidth: 170, fontStyle: "bold" } },
-    margin: { left: margin, right: margin },
+    margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
   });
   y = (doc as any).lastAutoTable.finalY + 14;
 
@@ -568,7 +568,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       body: participants,
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, cellPadding: 4 },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
   }
@@ -586,7 +586,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
       styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 3.5 },
       columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 90 }, 4: { cellWidth: 65 } },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
   }
@@ -622,7 +622,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, cellPadding: 4 },
       columnStyles: { 0: { cellWidth: 300, fontStyle: "bold" } },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
 
@@ -640,7 +640,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 4 },
       columnStyles: { 0: { cellWidth: 150, fontStyle: "bold" }, 1: { cellWidth: 110 } },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
 
@@ -660,7 +660,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
         styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 3.5 },
         columnStyles: { 1: { cellWidth: 55 }, 2: { cellWidth: 55 }, 3: { cellWidth: 160 } },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
       });
       y = (doc as any).lastAutoTable.finalY + 14;
     }
@@ -683,7 +683,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
         styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, cellPadding: 4 },
         columnStyles: { 0: { cellWidth: 100 } },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
       });
       y = (doc as any).lastAutoTable.finalY + 14;
     }
