@@ -398,6 +398,20 @@ function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
   return sortedKeys.map((key, idx) => buildOneBlock(key, grouped.get(key)!, insightMap, idx === sortedKeys.length - 1));
 }
 
+function prettyRequester(raw: string): string {
+  const s = sanitize(raw ?? "").trim();
+  if (!s) return "Cliente";
+  // Se for telefone puro, converte em rótulo legível preservando os últimos dígitos
+  const digits = s.replace(/\D+/g, "");
+  if (digits.length >= 8 && /^[+\d\s()-]+$/.test(s)) {
+    return `Cliente (final ${digits.slice(-4)})`;
+  }
+  return s;
+}
+
+const CRITICAL_RE =
+  /(urg[eê]ncia|urgente|cr[íi]tico|parad[oa]|n[aã]o funciona|fora do ar|erro|bug|cancelar|rescis[aã]o|prejuiz[oó]|perdendo)/i;
+
 function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _isLast: boolean): DemandItem {
   const date = new Date(`${key}T12:00:00`);
   const cleanedItems = items.map((d) => {
@@ -406,7 +420,7 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
     return { ...d, cleanText: r.text, cleanResolution: rr.text };
   });
 
-  const requester = sanitize(items[0]?.requester ?? "Cliente");
+  const requester = prettyRequester(items[0]?.requester ?? "Cliente");
 
   // Consolida solicitações repetidas
   const demandCounts = new Map<string, number>();
@@ -422,9 +436,8 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
 
   // Extrai frases-chave (urgência/reclamação/decisão)
   const keyQuotes: string[] = [];
-  const quoteRe = /(urg[eê]ncia|urgente|preciso|est[aá] tudo errado|combinamos|prometeram?|j[aá] avis[ea]i|h[aá] mais de|n[aã]o funciona|erro|bug|cancelar|rescis[aã]o)/i;
   for (const ci of cleanedItems) {
-    if (ci.cleanText && quoteRe.test(ci.cleanText) && keyQuotes.length < 3) {
+    if (ci.cleanText && CRITICAL_RE.test(ci.cleanText) && keyQuotes.length < 3) {
       keyQuotes.push(ci.cleanText.slice(0, 220));
     }
   }
@@ -450,6 +463,7 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
   const responseSummary = responseParts.join(" ").slice(0, 900) || "Sem devolutiva registrada.";
 
   const pendCount = cleanedItems.filter((d) => d.status === "pendente").length;
+  const isCritical = pendCount > 0 || keyQuotes.length > 0;
   const status = pendCount > 0 ? `Pendente (${pendCount})` : "Resolvido";
   const solution = resItems.length ? "Ajuste/parametrização aplicada pela equipe Amigo Flow." : "—";
 
@@ -458,7 +472,7 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
     requester,
     demandSummary: demandSummary || "Interação sem conteúdo operacional relevante.",
     keyQuotes,
-    problem: demandSummary.slice(0, 160),
+    problem: (isCritical ? "CRITICO: " : "") + demandSummary.slice(0, 160),
     responder,
     responseSummary,
     solution,
