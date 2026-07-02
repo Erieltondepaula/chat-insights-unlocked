@@ -630,7 +630,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = (doc as any).lastAutoTable.finalY + 14;
 
     // ============ 7. SAUDE / EVOLUCAO / ESFORCO ============
-    y = sectionTitle(doc, "7. Saude, Evolucao e Esforco", margin, y);
+    y = sectionTitle(doc, "8. Saude, Evolucao e Esforco", margin, y);
     autoTable(doc, {
       startY: y,
       head: [["Indicador", "Classificacao", "Justificativa"]],
@@ -649,7 +649,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
     // ============ 8. MAPEAMENTO EMOCIONAL ============
     if (ar.emotionalMoments?.length) {
-      y = sectionTitle(doc, "8. Mapeamento Emocional do Cliente", margin, y);
+      y = sectionTitle(doc, "9. Mapeamento Emocional do Cliente", margin, y);
       autoTable(doc, {
         startY: y,
         head: [["Emocao", "Confianca", "Data", "Mensagem do Cliente", "Motivo"]],
@@ -670,7 +670,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
     // ============ 9. LINHA DO TEMPO DO HUMOR ============
     if (ar.humorTimeline?.length) {
-      y = sectionTitle(doc, "9. Linha do Tempo do Humor", margin, y);
+      y = sectionTitle(doc, "10. Linha do Tempo do Humor", margin, y);
       const humorLabel = (em: string) => {
         const cleanEm = String(em).trim();
         if (/😊|🙂|feliz|satisf/i.test(cleanEm)) return "Satisfeito";
@@ -692,7 +692,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
 
     // ============ 10. CSAT ANALITICO ============
-    y = sectionTitle(doc, "10. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
+    y = sectionTitle(doc, "11. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
     const csatScore = ar.csat?.score ?? Math.round(draft.metrics.pctResolucao);
     y = ensureSpace(doc, y, 70, margin);
     doc.setFillColor(...INFO_BG);
@@ -722,7 +722,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       draft.satisfaction?.churnRisk === "baixo" ||
       draft.metrics.pctResolucao >= 95;
     if (!churnSuppress && ar.churnSignals?.length) {
-      y = sectionTitle(doc, "11. Alerta de Risco de Churn", margin, y);
+      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
       ar.churnSignals.forEach((s, idx) => {
         y = ensureSpace(doc, y, 60, margin);
         doc.setFillColor(...ALERT_BG);
@@ -744,7 +744,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         y += 62;
       });
     } else {
-      y = sectionTitle(doc, "11. Alerta de Risco de Churn", margin, y);
+      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
       y = paragraph(
         doc,
         "Nao foram encontrados indicios objetivos suficientes de risco de churn no periodo analisado.",
@@ -756,7 +756,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
 
     // ============ 12. DIAGNOSTICO FINAL ============
-    y = sectionTitle(doc, "12. Diagnostico Final", margin, y);
+    y = sectionTitle(doc, "13. Diagnostico Final", margin, y);
     y = renderListBox(doc, "Pontos Positivos", ar.diagnosis?.strengths ?? [], margin, y, contentW);
     y = renderListBox(doc, "Pontos de Atencao", ar.diagnosis?.attentionPoints ?? [], margin, y, contentW);
     y = renderListBox(doc, "Oportunidades — Produto", ar.diagnosis?.opportunities?.product ?? [], margin, y, contentW);
@@ -764,7 +764,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     y = renderListBox(doc, "Oportunidades — Processo", ar.diagnosis?.opportunities?.process ?? [], margin, y, contentW);
 
     // ============ 13. PLANO DE ACAO ============
-    y = sectionTitle(doc, "13. Plano de Acao e Proximos Passos", margin, y);
+    y = sectionTitle(doc, "14. Plano de Acao e Proximos Passos", margin, y);
     y = renderListBox(
       doc,
       "Proximos Passos Imediatos",
