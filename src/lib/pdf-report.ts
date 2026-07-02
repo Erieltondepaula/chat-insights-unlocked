@@ -826,16 +826,31 @@ function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: n
   }
   const solLines = doc.splitTextToSize(`Solucao: ${sanitize(d.solution || "—")}`, halfW - 16) as string[];
 
+  const isCritical = /pendente/i.test(d.status) || (d.keyQuotes && d.keyQuotes.length > 0) || /^CRITICO/i.test(d.problem);
+  const bannerH = isCritical ? 16 : 0;
+
   const leftH = 46 + demandLines.length * 11 + (quoteLines.length ? 8 + quoteLines.length * 10 : 0) + 8;
   const rightH = 46 + responseLines.length * 11 + solLines.length * 10 + 8;
   const boxH = Math.max(leftH, rightH, 90);
 
-  y = ensureSpace(doc, y, boxH + 12, x);
+  // Mantém banner + bloco inteiros na mesma página (sem quebra)
+  y = ensureSpace(doc, y, bannerH + boxH + 12, x);
+
+  // ---- Banner CRITICO opcional ----
+  if (isCritical) {
+    doc.setFillColor(...ALERT_BORDER);
+    doc.roundedRect(x, y, w, 14, 3, 3, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`PONTO CRITICO  |  ${sanitize(d.dateLabel)}  |  Status: ${sanitize(d.status)}`, x + 8, y + 10);
+    y += bannerH;
+  }
 
   // ---- Left: Solicitação do Cliente ----
   doc.setFillColor(240, 246, 252);
   doc.roundedRect(x, y, halfW, boxH, 4, 4, "F");
-  doc.setFillColor(...BLUE);
+  doc.setFillColor(...(isCritical ? ALERT_BORDER : BLUE));
   doc.rect(x, y, 4, boxH, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
@@ -844,7 +859,7 @@ function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: n
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...MUTED);
-  doc.text(`${sanitize(d.dateLabel)}   |   ${sanitize(d.requester)}`, x + 10, y + 26);
+  doc.text(`${sanitize(d.dateLabel)}   |   Solicitante: ${sanitize(d.requester)}`, x + 10, y + 26);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
