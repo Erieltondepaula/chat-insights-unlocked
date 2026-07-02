@@ -398,6 +398,20 @@ function buildDemandBlocks(a: Analysis, insightMap: InsightMap): DemandItem[] {
   return sortedKeys.map((key, idx) => buildOneBlock(key, grouped.get(key)!, insightMap, idx === sortedKeys.length - 1));
 }
 
+function prettyRequester(raw: string): string {
+  const s = sanitize(raw ?? "").trim();
+  if (!s) return "Cliente";
+  // Se for telefone puro, converte em rótulo legível preservando os últimos dígitos
+  const digits = s.replace(/\D+/g, "");
+  if (digits.length >= 8 && /^[+\d\s()-]+$/.test(s)) {
+    return `Cliente (final ${digits.slice(-4)})`;
+  }
+  return s;
+}
+
+const CRITICAL_RE =
+  /(urg[eê]ncia|urgente|cr[íi]tico|parad[oa]|n[aã]o funciona|fora do ar|erro|bug|cancelar|rescis[aã]o|prejuiz[oó]|perdendo)/i;
+
 function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _isLast: boolean): DemandItem {
   const date = new Date(`${key}T12:00:00`);
   const cleanedItems = items.map((d) => {
@@ -406,7 +420,7 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
     return { ...d, cleanText: r.text, cleanResolution: rr.text };
   });
 
-  const requester = sanitize(items[0]?.requester ?? "Cliente");
+  const requester = prettyRequester(items[0]?.requester ?? "Cliente");
 
   // Consolida solicitações repetidas
   const demandCounts = new Map<string, number>();
@@ -422,9 +436,8 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
 
   // Extrai frases-chave (urgência/reclamação/decisão)
   const keyQuotes: string[] = [];
-  const quoteRe = /(urg[eê]ncia|urgente|preciso|est[aá] tudo errado|combinamos|prometeram?|j[aá] avis[ea]i|h[aá] mais de|n[aã]o funciona|erro|bug|cancelar|rescis[aã]o)/i;
   for (const ci of cleanedItems) {
-    if (ci.cleanText && quoteRe.test(ci.cleanText) && keyQuotes.length < 3) {
+    if (ci.cleanText && CRITICAL_RE.test(ci.cleanText) && keyQuotes.length < 3) {
       keyQuotes.push(ci.cleanText.slice(0, 220));
     }
   }
@@ -450,6 +463,7 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
   const responseSummary = responseParts.join(" ").slice(0, 900) || "Sem devolutiva registrada.";
 
   const pendCount = cleanedItems.filter((d) => d.status === "pendente").length;
+  const isCritical = pendCount > 0 || keyQuotes.length > 0;
   const status = pendCount > 0 ? `Pendente (${pendCount})` : "Resolvido";
   const solution = resItems.length ? "Ajuste/parametrização aplicada pela equipe Amigo Flow." : "—";
 
@@ -458,7 +472,7 @@ function buildOneBlock(key: string, items: Demand[], _insightMap: InsightMap, _i
     requester,
     demandSummary: demandSummary || "Interação sem conteúdo operacional relevante.",
     keyQuotes,
-    problem: demandSummary.slice(0, 160),
+    problem: (isCritical ? "CRITICO: " : "") + demandSummary.slice(0, 160),
     responder,
     responseSummary,
     solution,
@@ -537,7 +551,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
     styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 4 },
     columnStyles: { 0: { cellWidth: 170, fontStyle: "bold" } },
-    margin: { left: margin, right: margin },
+    margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
   });
   y = (doc as any).lastAutoTable.finalY + 14;
 
@@ -554,7 +568,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       body: participants,
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, cellPadding: 4 },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
   }
@@ -572,7 +586,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
       styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 3.5 },
       columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 90 }, 4: { cellWidth: 65 } },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
   }
@@ -608,7 +622,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, cellPadding: 4 },
       columnStyles: { 0: { cellWidth: 300, fontStyle: "bold" } },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
 
@@ -626,7 +640,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9.5 },
       styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 4 },
       columnStyles: { 0: { cellWidth: 150, fontStyle: "bold" }, 1: { cellWidth: 110 } },
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
     });
     y = (doc as any).lastAutoTable.finalY + 14;
 
@@ -646,7 +660,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
         styles: { fontSize: 8.5, lineColor: RULE, textColor: TEXT, valign: "top", cellPadding: 3.5 },
         columnStyles: { 1: { cellWidth: 55 }, 2: { cellWidth: 55 }, 3: { cellWidth: 160 } },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
       });
       y = (doc as any).lastAutoTable.finalY + 14;
     }
@@ -669,7 +683,7 @@ export function generatePdf(draft: ReportDraft): jsPDF {
         headStyles: { fillColor: NAVY_DEEP, textColor: 255, fontSize: 9 },
         styles: { fontSize: 9, lineColor: RULE, textColor: TEXT, cellPadding: 4 },
         columnStyles: { 0: { cellWidth: 100 } },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin }, rowPageBreak: 'avoid',
       });
       y = (doc as any).lastAutoTable.finalY + 14;
     }
@@ -812,16 +826,31 @@ function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: n
   }
   const solLines = doc.splitTextToSize(`Solucao: ${sanitize(d.solution || "—")}`, halfW - 16) as string[];
 
+  const isCritical = /pendente/i.test(d.status) || (d.keyQuotes && d.keyQuotes.length > 0) || /^CRITICO/i.test(d.problem);
+  const bannerH = isCritical ? 16 : 0;
+
   const leftH = 46 + demandLines.length * 11 + (quoteLines.length ? 8 + quoteLines.length * 10 : 0) + 8;
   const rightH = 46 + responseLines.length * 11 + solLines.length * 10 + 8;
   const boxH = Math.max(leftH, rightH, 90);
 
-  y = ensureSpace(doc, y, boxH + 12, x);
+  // Mantém banner + bloco inteiros na mesma página (sem quebra)
+  y = ensureSpace(doc, y, bannerH + boxH + 12, x);
+
+  // ---- Banner CRITICO opcional ----
+  if (isCritical) {
+    doc.setFillColor(...ALERT_BORDER);
+    doc.roundedRect(x, y, w, 14, 3, 3, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`PONTO CRITICO  |  ${sanitize(d.dateLabel)}  |  Status: ${sanitize(d.status)}`, x + 8, y + 10);
+    y += bannerH;
+  }
 
   // ---- Left: Solicitação do Cliente ----
   doc.setFillColor(240, 246, 252);
   doc.roundedRect(x, y, halfW, boxH, 4, 4, "F");
-  doc.setFillColor(...BLUE);
+  doc.setFillColor(...(isCritical ? ALERT_BORDER : BLUE));
   doc.rect(x, y, 4, boxH, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
@@ -830,7 +859,7 @@ function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: n
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...MUTED);
-  doc.text(`${sanitize(d.dateLabel)}   |   ${sanitize(d.requester)}`, x + 10, y + 26);
+  doc.text(`${sanitize(d.dateLabel)}   |   Solicitante: ${sanitize(d.requester)}`, x + 10, y + 26);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -1066,8 +1095,10 @@ function paragraph(doc: jsPDF, text: string, x: number, y: number, w: number, si
   return y;
 }
 
-function sectionTitle(doc: jsPDF, t: string, x: number, y: number): number {
-  y = ensureSpace(doc, y, 32, x);
+function sectionTitle(doc: jsPDF, t: string, x: number, y: number, minContentAfter = 100): number {
+  // Reserva espaço para o título + primeiro bloco de conteúdo,
+  // evitando que o título fique órfão no fim de uma página.
+  y = ensureSpace(doc, y, minContentAfter, x);
   doc.setFillColor(...BLUE);
   doc.rect(x, y - 2, 4, 15, "F");
   doc.setFont("helvetica", "bold");
