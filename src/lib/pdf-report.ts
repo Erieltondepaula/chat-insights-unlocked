@@ -703,84 +703,114 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       y = (doc as any).lastAutoTable.finalY + 14;
     }
 
-    // ============ 10. CSAT ANALITICO ============
-    y = sectionTitle(doc, "11. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
-    const csatScore = ar.csat?.score ?? Math.round(draft.metrics.pctResolucao);
-    y = ensureSpace(doc, y, 70, margin);
-    doc.setFillColor(...INFO_BG);
-    doc.roundedRect(margin, y, contentW, 60, 4, 4, "F");
-    doc.setFillColor(...NAVY_DEEP);
-    doc.roundedRect(margin, y, 6, 60, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    doc.setTextColor(...NAVY);
-    doc.text(`${csatScore}/100`, margin + 20, y + 30);
-    doc.setFontSize(10);
-    doc.setTextColor(...TEXT);
-    doc.text(sanitize(ar.csat?.classification ?? "—"), margin + 20, y + 48);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    const memo = doc.splitTextToSize(sanitize(ar.csat?.calculationMemo ?? ""), contentW - 180) as string[];
-    let my = y + 18;
-    for (const ln of memo.slice(0, 4)) {
-      doc.text(ln, margin + 170, my);
-      my += 11;
-    }
-    y += 74;
+  }
 
-    // ============ 11. CHURN (so se houver) ============
-    const churnSuppress =
-      draft.metrics.pendentes === 0 ||
-      draft.satisfaction?.churnRisk === "baixo" ||
-      draft.metrics.pctResolucao >= 95;
-    if (!churnSuppress && ar.churnSignals?.length) {
-      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
-      ar.churnSignals.forEach((s, idx) => {
-        y = ensureSpace(doc, y, 60, margin);
-        doc.setFillColor(...ALERT_BG);
-        doc.roundedRect(margin, y, contentW, 55, 3, 3, "F");
-        doc.setFillColor(...ALERT_BORDER);
-        doc.rect(margin, y, 4, 55, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9.5);
-        doc.setTextColor(...ALERT_BORDER);
-        doc.text(`Sinal #${idx + 1}  |  Peso: ${sanitize(s.weight)}  |  Data: ${sanitize(s.date)}`, margin + 10, y + 15);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(...TEXT);
-        const qLines = doc.splitTextToSize(`"${sanitize(s.quote)}"`, contentW - 20) as string[];
-        doc.text(qLines.slice(0, 2), margin + 10, y + 30);
-        doc.setFontSize(8.5);
-        doc.setTextColor(...MUTED);
-        doc.text(`Impacto: ${sanitize(s.impact)}`, margin + 10, y + 50);
-        y += 62;
-      });
-    } else {
-      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
-      y = paragraph(
-        doc,
-        "Nao foram encontrados indicios objetivos suficientes de risco de churn no periodo analisado.",
-        margin,
-        y,
-        contentW,
-        9.5,
+  // ============ CSAT ANALITICO (sempre renderiza, mesmo sem auditReport) ============
+  y = sectionTitle(doc, `${ar ? "11" : "5"}. Score de Satisfacao do Cliente (CSAT Analitico)`, margin, y);
+  const csatScore =
+    ar?.csat?.score ??
+    (draft.satisfaction?.score ?? Math.round(draft.metrics.pctResolucao));
+  const csatClass =
+    ar?.csat?.classification ??
+    (csatScore >= 80 ? "Satisfeito"
+      : csatScore >= 60 ? "Neutro"
+      : csatScore >= 40 ? "Insatisfeito"
+      : "Muito Insatisfeito");
+  const csatMemo =
+    ar?.csat?.calculationMemo ??
+    `Score calculado a partir do percentual de resolucao (${Math.round(draft.metrics.pctResolucao)}%), ` +
+      `${draft.metrics.pendentes} pendencia(s) e sinais de sentimento identificados na conversa.`;
+  y = ensureSpace(doc, y, 70, margin);
+  doc.setFillColor(...INFO_BG);
+  doc.roundedRect(margin, y, contentW, 60, 4, 4, "F");
+  doc.setFillColor(...(csatScore < 40 ? ALERT_BORDER : NAVY_DEEP));
+  doc.roundedRect(margin, y, 6, 60, 3, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(...NAVY);
+  doc.text(`${csatScore}/100`, margin + 20, y + 30);
+  doc.setFontSize(10);
+  doc.setTextColor(...TEXT);
+  doc.text(sanitize(csatClass), margin + 20, y + 48);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const memo = doc.splitTextToSize(sanitize(csatMemo), contentW - 180) as string[];
+  let my = y + 18;
+  for (const ln of memo.slice(0, 4)) {
+    doc.text(ln, margin + 170, my);
+    my += 11;
+  }
+  y += 74;
+
+  // ============ DETECCAO E EVIDENCIACAO DO ALERTA DE RISCO DE CHURN ============
+  const churnSuppress =
+    draft.metrics.pendentes === 0 ||
+    draft.satisfaction?.churnRisk === "baixo" ||
+    (draft.metrics.pctResolucao >= 95 && !ar?.churnSignals?.length);
+  y = sectionTitle(doc, `${ar ? "12" : "6"}. Deteccao e Evidenciacao do Alerta de Risco de Churn`, margin, y);
+  if (!churnSuppress && ar?.churnSignals?.length) {
+    ar.churnSignals.forEach((s, idx) => {
+      const quoteText = `"${sanitize(s.quote)}"`;
+      const impactText = `Impacto: ${sanitize(s.impact)}`;
+      const qLines = doc.splitTextToSize(quoteText, contentW - 24) as string[];
+      const iLines = doc.splitTextToSize(impactText, contentW - 24) as string[];
+      const boxH = 30 + qLines.length * 11 + iLines.length * 10 + 10;
+      y = ensureSpace(doc, y, boxH + 8, margin);
+      doc.setDrawColor(...ALERT_BORDER);
+      doc.setFillColor(...ALERT_BG);
+      doc.roundedRect(margin, y, contentW, boxH, 3, 3, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...ALERT_BORDER);
+      doc.text(
+        `Sinal n${String.fromCharCode(186)} ${idx + 1}   •   Peso: ${sanitize(s.weight)}   •   Data: ${sanitize(s.date)}`,
+        margin + 10,
+        y + 15,
       );
-    }
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(...TEXT);
+      let qy = y + 28;
+      for (const ln of qLines) {
+        doc.text(ln, margin + 10, qy);
+        qy += 11;
+      }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...TEXT);
+      for (const ln of iLines) {
+        doc.text(ln, margin + 10, qy);
+        qy += 10;
+      }
+      y += boxH + 8;
+    });
+  } else {
+    y = paragraph(
+      doc,
+      "Nao foram encontrados indicios objetivos suficientes de risco de churn no periodo analisado.",
+      margin,
+      y,
+      contentW,
+      9.5,
+    );
+  }
 
-    // ============ 12. DIAGNOSTICO FINAL ============
+  if (ar) {
+
+    // ============ 13. DIAGNOSTICO FINAL ============
     y = sectionTitle(doc, "13. Diagnostico Final", margin, y);
     y = renderListBox(doc, "Pontos Positivos", ar.diagnosis?.strengths ?? [], margin, y, contentW);
     y = renderListBox(doc, "Pontos de Atencao", ar.diagnosis?.attentionPoints ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Oportunidades — Produto", ar.diagnosis?.opportunities?.product ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Oportunidades — Suporte", ar.diagnosis?.opportunities?.support ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Oportunidades — Processo", ar.diagnosis?.opportunities?.process ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Oportunidades - Produto", ar.diagnosis?.opportunities?.product ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Oportunidades - Suporte", ar.diagnosis?.opportunities?.support ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Oportunidades - Processo", ar.diagnosis?.opportunities?.process ?? [], margin, y, contentW);
 
-    // ============ 13. PLANO DE ACAO ============
+    // ============ 14. PLANO DE ACAO ============
     y = sectionTitle(doc, "14. Plano de Acao e Proximos Passos", margin, y);
     y = renderListBox(
       doc,
       "Proximos Passos Imediatos",
-      ar.conclusion?.nextSteps?.map((s) => `${sanitize(s.action)} — Responsavel: ${sanitize(s.owner)}`) ?? [],
+      ar.conclusion?.nextSteps?.map((s) => `${sanitize(s.action)} - Responsavel: ${sanitize(s.owner)}`) ?? [],
       margin,
       y,
       contentW,
@@ -793,8 +823,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
   }
 
-  // ============ 15. INDICADORES VISUAIS ============
-  y = sectionTitle(doc, `${ar ? "15" : "5"}. Indicadores Visuais`, margin, y);
+  // ============ ANEXO B - INDICADORES VISUAIS ============
+  y = sectionTitle(doc, `Anexo B - Indicadores Visuais`, margin, y);
   y = renderVisualIndicators(doc, draft, margin, y, contentW);
 
   // ============ 16. RESUMO CONSOLIDADO (final, em paragrafos) ============
