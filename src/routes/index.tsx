@@ -225,6 +225,7 @@ function Index() {
             clientGender: gender,
             conversationText: convoText || "(sem texto)",
             attachmentInsights: insights.map((i) => i.summary).filter(Boolean),
+            customSystemPrompt: customPrompt,
             stats: {
               total: a.demandStats.total,
               resolvidas: a.demandStats.resolvidas,
