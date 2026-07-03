@@ -937,98 +937,130 @@ function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: n
 
 function renderVisualIndicators(doc: jsPDF, draft: ReportDraft, x: number, y: number, w: number): number {
   const m = draft.metrics;
-  y = ensureSpace(doc, y, 140, x);
 
-  // Barras: Solicitações vs Respostas vs Pendências
-  const maxV = Math.max(m.totalSolicitacoes, m.totalRespostas, m.pendentes, 1);
-  const barLabels: [string, number, [number, number, number]][] = [
-    ["Solicitacoes", m.totalSolicitacoes, BLUE],
-    ["Respostas", m.totalRespostas, [46, 139, 87]],
-    ["Pendencias", m.pendentes, ALERT_BORDER],
-    ["% Resolucao", Math.round(m.pctResolucao), NAVY_DEEP],
+  // ---------- 4 CARDS DE TOPO (Solicitações, Respostas, Pendentes, % Resolução) ----------
+  const kpiGap = 8;
+  const kpiW = (w - kpiGap * 3) / 4;
+  const kpiH = 62;
+  y = ensureSpace(doc, y, kpiH + 130, x);
+  const kpis: { label: string; value: string; color: [number, number, number]; alertBg?: boolean }[] = [
+    { label: "Solicitacoes", value: String(m.totalSolicitacoes), color: [46, 111, 184] },
+    { label: "Respostas", value: String(m.totalRespostas), color: [26, 61, 110] },
+    { label: "Pendentes", value: String(m.pendentes), color: ALERT_BORDER, alertBg: m.pendentes > 0 },
+    { label: "% Resolucao", value: `${Math.round(m.pctResolucao)}%`, color: [34, 130, 70] },
   ];
-  const barX = x;
-  const barW = w * 0.55;
-  let by = y;
+  for (let i = 0; i < kpis.length; i++) {
+    const c = kpis[i];
+    const cx = x + i * (kpiW + kpiGap);
+    doc.setFillColor(...(c.alertBg ? ALERT_BG : [240, 243, 246] as [number, number, number]));
+    doc.roundedRect(cx, y, kpiW, kpiH, 4, 4, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(...c.color);
+    doc.text(c.value, cx + 12, y + 30);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(c.label, cx + 12, y + 50);
+  }
+  y += kpiH + 10;
+
+  // ---------- 2 PAINÉIS: Quem mais solicitou / Quem mais respondeu ----------
+  const panelGap = 10;
+  const panelW = (w - panelGap) / 2;
+  const bars = (title: string, entries: { name: string; count: number }[], color: [number, number, number], px: number, py: number) => {
+    const rows = entries.slice(0, 4);
+    const rowsH = Math.max(1, rows.length) * 14 + 8;
+    const h = 26 + rowsH;
+    doc.setDrawColor(...RULE);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(px, py, panelW, h, 4, 4, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...NAVY);
+    doc.text(title, px + 10, py + 16);
+    const max = Math.max(1, ...rows.map((r) => r.count));
+    const labelW = 90;
+    const barMaxW = panelW - labelW - 40;
+    let by = py + 30;
+    for (const r of rows) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...TEXT);
+      doc.text(sanitize(r.name).slice(0, 24), px + 10, by + 7);
+      const filled = Math.max(4, (r.count / max) * barMaxW);
+      doc.setFillColor(...RULE);
+      doc.roundedRect(px + labelW, by, barMaxW, 8, 2, 2, "F");
+      doc.setFillColor(...color);
+      doc.roundedRect(px + labelW, by, filled, 8, 2, 2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...NAVY);
+      doc.text(String(r.count), px + labelW + filled + 4, by + 7);
+      by += 14;
+    }
+    return h;
+  };
+  const hLeft = bars("Quem mais solicitou", m.topRequesters, [46, 111, 184], x, y);
+  const hRight = bars("Quem mais respondeu", m.topResponders, [46, 111, 184], x + panelW + panelGap, y);
+  y += Math.max(hLeft, hRight) + panelGap;
+
+  // ---------- Painel Pendência × Resolução (barra empilhada) ----------
+  y = ensureSpace(doc, y, 90, x);
+  const stackH = 78;
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, panelW, stackH, 4, 4, "FD");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
+  doc.setFontSize(9.5);
   doc.setTextColor(...NAVY);
-  doc.text("Volume Operacional", barX, by);
-  by += 12;
-  for (const [label, value, color] of barLabels) {
+  doc.text("Pendencia x Resolucao", x + 10, y + 16);
+  const stackY = y + 26;
+  const stackBarW = panelW - 20;
+  const total = Math.max(1, m.resolvidas + m.pendentes);
+  const resW = (m.resolvidas / total) * stackBarW;
+  doc.setFillColor(34, 130, 70);
+  doc.rect(x + 10, stackY, resW, 12, "F");
+  doc.setFillColor(...ALERT_BORDER);
+  doc.rect(x + 10 + resW, stackY, stackBarW - resW, 12, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(34, 130, 70);
+  doc.text(`Resolvidas: ${m.resolvidas} (${Math.round((m.resolvidas / total) * 100)}%)`, x + 10, stackY + 26);
+  doc.setTextColor(...ALERT_BORDER);
+  doc.text(`Pendentes: ${m.pendentes} (${Math.round((m.pendentes / total) * 100)}%)`, x + 10, stackY + 40);
+
+  // ---------- Painel Satisfação do cliente (donut simplificado) ----------
+  const px2 = x + panelW + panelGap;
+  doc.roundedRect(px2, y, panelW, stackH, 4, 4, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...NAVY);
+  doc.text("Satisfacao do cliente", px2 + 10, y + 16);
+  const s = draft.metrics.satisfacao;
+  const totalS = Math.max(1, s.muitoSatisfeito + s.satisfeito + s.neutro + s.insatisfeito + s.churnRisk);
+  const rows: { lbl: string; v: number; c: [number, number, number] }[] = [
+    { lbl: "Muito satisfeito", v: s.muitoSatisfeito, c: [34, 130, 70] },
+    { lbl: "Satisfeito", v: s.satisfeito, c: [46, 139, 87] },
+    { lbl: "Neutro", v: s.neutro, c: MUTED },
+    { lbl: "Insatisfeito", v: s.insatisfeito, c: [200, 90, 30] },
+    { lbl: "Risco de churn", v: s.churnRisk, c: ALERT_BORDER },
+  ];
+  let ry2 = y + 28;
+  for (const r of rows) {
+    doc.setFillColor(...r.c);
+    doc.circle(px2 + 14, ry2 + 3, 3, "F");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...TEXT);
-    doc.text(label, barX, by + 8);
-    const reference = label === "% Resolucao" ? 100 : maxV;
-    const filled = Math.max(2, (value / reference) * (barW - 100));
-    doc.setFillColor(...RULE);
-    doc.roundedRect(barX + 80, by, barW - 100, 8, 2, 2, "F");
-    doc.setFillColor(...color);
-    doc.roundedRect(barX + 80, by, filled, 8, 2, 2, "F");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...NAVY);
-    doc.text(label === "% Resolucao" ? `${value}%` : String(value), barX + barW - 15, by + 8, { align: "right" });
-    by += 16;
+    doc.text(`${r.lbl}: ${r.v} (${Math.round((r.v / totalS) * 100)}%)`, px2 + 22, ry2 + 5);
+    ry2 += 10;
   }
 
-  // Painel lateral: Top solicitantes / respondedores
-  const sideX = x + barW + 10;
-  const sideW = w - barW - 10;
-  let sy = y;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...NAVY);
-  doc.text("Quem mais solicitou", sideX, sy);
-  sy += 12;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...TEXT);
-  for (const r of m.topRequesters.slice(0, 3)) {
-    doc.text(`• ${sanitize(r.name)} (${r.count})`, sideX, sy);
-    sy += 11;
-  }
-  sy += 4;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...NAVY);
-  doc.text("Quem mais respondeu", sideX, sy);
-  sy += 12;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...TEXT);
-  for (const r of m.topResponders.slice(0, 3)) {
-    doc.text(`• ${sanitize(r.name)} (${r.count})`, sideX, sy);
-    sy += 11;
-  }
-
-  y = Math.max(by, sy) + 8;
-
-  // Faixa de satisfação
-  const sat = draft.satisfaction;
-  if (sat) {
-    y = ensureSpace(doc, y, 34, x);
-    const emoji =
-      sat.sentiment === "muito_satisfeito" || sat.sentiment === "satisfeito"
-        ? "Satisfeito"
-        : sat.sentiment === "neutro"
-          ? "Neutro"
-          : "Insatisfeito";
-    doc.setFillColor(...INFO_BG);
-    doc.roundedRect(x, y, w, 26, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...NAVY);
-    doc.text(
-      `Satisfacao: ${emoji}   |   Score: ${sat.score}/100   |   Risco de Churn: ${sanitize(sat.churnRisk)}   |   Evolucao: ${sanitize(sat.evolution)}`,
-      x + 10,
-      y + 17,
-    );
-    y += 34;
-  }
-
+  y += stackH + 10;
   return y;
 }
+
 
 function renderQuadrant(
   doc: jsPDF,
