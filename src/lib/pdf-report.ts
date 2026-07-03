@@ -329,10 +329,77 @@ export function buildDraft(
     satisfaction,
   };
 
-  draft.consolidatedSummary =
-    (satisfaction?.consolidatedSummary && satisfaction.consolidatedSummary.trim()) ||
-    "Análise consolidada executada pelo sistema.";
+  const llmSummary = satisfaction?.consolidatedSummary?.trim() ?? "";
+  draft.consolidatedSummary = llmSummary.length >= 400
+    ? llmSummary
+    : buildFallbackConsolidatedSummary(a, draft, satisfaction);
   return draft;
+}
+
+function buildFallbackConsolidatedSummary(
+  a: Analysis,
+  draft: ReportDraft,
+  sat: SatisfactionAnalysis | null,
+): string {
+  const m = draft.metrics;
+  const periodo = `${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}`;
+  const cliente = draft.clientName || "a clinica contratante";
+  const responders = m.topResponders.map((r) => `${r.name} (${r.count})`).join(", ") || "equipe Amigo Flow";
+  const requesters = m.topRequesters.map((r) => `${r.name} (${r.count})`).join(", ") || "equipe operacional do cliente";
+  const temas = draft.mainThemes.replace(/^•\s?/gm, "").split("\n").filter(Boolean).join("; ");
+  const pendentesLista = a.demands.filter((d) => d.status === "pendente").slice(0, 3)
+    .map((d) => `"${sanitize(stripMediaTokens(d.message).text).slice(0, 160)}"`).join("; ") || "sem pendencias criticas mapeadas";
+  const resolvidasLista = a.demands.filter((d) => d.status === "resolvido").slice(0, 3)
+    .map((d) => `"${sanitize(stripMediaTokens(d.message).text).slice(0, 140)}"`).join("; ") || "diversas solicitacoes concluidas pontualmente";
+
+  const p1 =
+    `O presente relatorio consolida a jornada de atendimento de ${cliente} no periodo de ${periodo}, ` +
+    `abrangendo ${m.totalSolicitacoes} solicitacao(oes) registradas via WhatsApp junto a equipe Amigo Flow. ` +
+    `Foram computadas ${m.resolvidas} demandas resolvidas e ${m.pendentes} pendencias, resultando em taxa objetiva ` +
+    `de resolucao de ${Math.round(m.pctResolucao)}%. Os principais solicitantes foram ${requesters}, enquanto ` +
+    `${responders} respondeu pela maior parte das devolutivas tecnicas. O perfil operacional envolve ajustes de ` +
+    `parametrizacao, orientacoes de uso do Agente Flow e validacoes de fluxo. A leitura macro deste periodo indica ` +
+    `um atendimento com volume tipico de solicitacoes recorrentes, mesclando itens de baixa complexidade e ` +
+    `situacoes pontuais de maior sensibilidade operacional que merecem acompanhamento executivo continuo.`;
+
+  const p2 =
+    `Do lado do cliente, as dores mais recorrentes se concentram em: ${temas || "ajustes de fluxo, agendamento e regras de convenio"}. ` +
+    `Trechos representativos capturados no historico incluem ${pendentesLista}. Essas manifestacoes evidenciam que, ` +
+    `em determinados momentos, o time da clinica sentiu necessidade de resposta mais rapida ou clareza adicional ` +
+    `sobre limitacoes nativas da ferramenta. O tom variou entre pedidos objetivos, questionamentos tecnicos e, ` +
+    `em ocasioes especificas, sinais de frustacao ligados a impacto operacional imediato no atendimento de pacientes. ` +
+    `A leitura contextual reforca a importancia de reduzir tempo entre solicitacao e devolutiva nos casos que envolvem ` +
+    `bloqueio total de fluxo, garantindo que a percepcao de valor da automacao se mantenha alta ao longo do ciclo.`;
+
+  const p3 =
+    `Sob o ponto de vista de reincidencia e gargalos, foram identificadas ${m.pendentes} pendencia(s) ativa(s) ` +
+    `e ${sat?.repeatedRequestsCount ?? 0} solicitacao(oes) repetida(s), o que sinaliza pontos que ainda demandam ` +
+    `intervencao estrutural do produto ou treinamento adicional do cliente. Os principais responsaveis pela resolucao, ` +
+    `${responders}, atuaram de forma tecnica e resolutiva, aplicando parametrizacoes e correcoes rapidas na maior ` +
+    `parte dos casos. Ainda assim, algumas limitacoes nativas do modulo precisam ser posicionadas de forma transparente ` +
+    `para a clinica, evitando expectativas divergentes em relacao ao comportamento esperado do Agente Flow em regras ` +
+    `de convenio, calendario e reagendamento automatico.`;
+
+  const p4 =
+    `Nos momentos positivos, o historico registra ${sat?.praisesCount ?? 0} elogio(s) explicito(s) e diversas ` +
+    `confirmacoes de resolucao. Entre os casos concluidos, destacam-se ${resolvidasLista}, mostrando que o suporte ` +
+    `consegue endereçar rapidamente correcoes de agendamento, ajustes de fluxo e duvidas de operacao. Esses ganhos ` +
+    `reforcam a percepcao de que o Agente Flow entrega valor real quando a parametrizacao esta alinhada as regras ` +
+    `especificas da clinica, e devem ser evidenciados junto a diretoria da conta como prova de eficiencia continua ` +
+    `do modulo. A ausencia de menções explicitas a cancelamento em grande parte do periodo tambem e um indicador ` +
+    `positivo sobre o vinculo comercial vigente.`;
+
+  const p5 =
+    `Recomendacao executiva para as equipes de Churn, Gerencia de Conta e Implantacao: (1) priorizar imediatamente ` +
+    `as ${m.pendentes} pendencia(s) mapeadas com plano de acao e responsavel definido; (2) agendar reuniao de ` +
+    `alinhamento com a clinica para revisar regras de convenio e limites nativos do modulo, prevenindo reincidencia; ` +
+    `(3) reforcar treinamento operacional focado nos temas ${temas || "ajustes de fluxo e agendamento"}; ` +
+    `(4) monitorar indicadores de satisfacao (${sat?.score ?? Math.round(m.pctResolucao)}/100) e risco de churn ` +
+    `(atualmente ${sat?.churnRisk ?? "baixo"}) semanalmente; (5) documentar formalmente ao cliente quando o modulo ` +
+    `nao atender uma regra especifica, permitindo decisao consciente sobre manter, adaptar ou descontinuar o uso. ` +
+    `Com essas acoes, o atendimento tende a evoluir de reativo para preditivo, reduzindo desgaste operacional.`;
+
+  return [p1, p2, p3, p4, p5].join("\n\n");
 }
 
 function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = null): ReportMetrics {
@@ -703,84 +770,114 @@ export function generatePdf(draft: ReportDraft): jsPDF {
       y = (doc as any).lastAutoTable.finalY + 14;
     }
 
-    // ============ 10. CSAT ANALITICO ============
-    y = sectionTitle(doc, "11. Score de Satisfacao do Cliente (CSAT Analitico)", margin, y);
-    const csatScore = ar.csat?.score ?? Math.round(draft.metrics.pctResolucao);
-    y = ensureSpace(doc, y, 70, margin);
-    doc.setFillColor(...INFO_BG);
-    doc.roundedRect(margin, y, contentW, 60, 4, 4, "F");
-    doc.setFillColor(...NAVY_DEEP);
-    doc.roundedRect(margin, y, 6, 60, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    doc.setTextColor(...NAVY);
-    doc.text(`${csatScore}/100`, margin + 20, y + 30);
-    doc.setFontSize(10);
-    doc.setTextColor(...TEXT);
-    doc.text(sanitize(ar.csat?.classification ?? "—"), margin + 20, y + 48);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    const memo = doc.splitTextToSize(sanitize(ar.csat?.calculationMemo ?? ""), contentW - 180) as string[];
-    let my = y + 18;
-    for (const ln of memo.slice(0, 4)) {
-      doc.text(ln, margin + 170, my);
-      my += 11;
-    }
-    y += 74;
+  }
 
-    // ============ 11. CHURN (so se houver) ============
-    const churnSuppress =
-      draft.metrics.pendentes === 0 ||
-      draft.satisfaction?.churnRisk === "baixo" ||
-      draft.metrics.pctResolucao >= 95;
-    if (!churnSuppress && ar.churnSignals?.length) {
-      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
-      ar.churnSignals.forEach((s, idx) => {
-        y = ensureSpace(doc, y, 60, margin);
-        doc.setFillColor(...ALERT_BG);
-        doc.roundedRect(margin, y, contentW, 55, 3, 3, "F");
-        doc.setFillColor(...ALERT_BORDER);
-        doc.rect(margin, y, 4, 55, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9.5);
-        doc.setTextColor(...ALERT_BORDER);
-        doc.text(`Sinal #${idx + 1}  |  Peso: ${sanitize(s.weight)}  |  Data: ${sanitize(s.date)}`, margin + 10, y + 15);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(...TEXT);
-        const qLines = doc.splitTextToSize(`"${sanitize(s.quote)}"`, contentW - 20) as string[];
-        doc.text(qLines.slice(0, 2), margin + 10, y + 30);
-        doc.setFontSize(8.5);
-        doc.setTextColor(...MUTED);
-        doc.text(`Impacto: ${sanitize(s.impact)}`, margin + 10, y + 50);
-        y += 62;
-      });
-    } else {
-      y = sectionTitle(doc, "12. Alerta de Risco de Churn", margin, y);
-      y = paragraph(
-        doc,
-        "Nao foram encontrados indicios objetivos suficientes de risco de churn no periodo analisado.",
-        margin,
-        y,
-        contentW,
-        9.5,
+  // ============ CSAT ANALITICO (sempre renderiza, mesmo sem auditReport) ============
+  y = sectionTitle(doc, `${ar ? "11" : "5"}. Score de Satisfacao do Cliente (CSAT Analitico)`, margin, y);
+  const csatScore =
+    ar?.csat?.score ??
+    (draft.satisfaction?.score ?? Math.round(draft.metrics.pctResolucao));
+  const csatClass =
+    ar?.csat?.classification ??
+    (csatScore >= 80 ? "Satisfeito"
+      : csatScore >= 60 ? "Neutro"
+      : csatScore >= 40 ? "Insatisfeito"
+      : "Muito Insatisfeito");
+  const csatMemo =
+    ar?.csat?.calculationMemo ??
+    `Score calculado a partir do percentual de resolucao (${Math.round(draft.metrics.pctResolucao)}%), ` +
+      `${draft.metrics.pendentes} pendencia(s) e sinais de sentimento identificados na conversa.`;
+  y = ensureSpace(doc, y, 70, margin);
+  doc.setFillColor(...INFO_BG);
+  doc.roundedRect(margin, y, contentW, 60, 4, 4, "F");
+  doc.setFillColor(...(csatScore < 40 ? ALERT_BORDER : NAVY_DEEP));
+  doc.roundedRect(margin, y, 6, 60, 3, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(...NAVY);
+  doc.text(`${csatScore}/100`, margin + 20, y + 30);
+  doc.setFontSize(10);
+  doc.setTextColor(...TEXT);
+  doc.text(sanitize(csatClass), margin + 20, y + 48);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const memo = doc.splitTextToSize(sanitize(csatMemo), contentW - 180) as string[];
+  let my = y + 18;
+  for (const ln of memo.slice(0, 4)) {
+    doc.text(ln, margin + 170, my);
+    my += 11;
+  }
+  y += 74;
+
+  // ============ DETECCAO E EVIDENCIACAO DO ALERTA DE RISCO DE CHURN ============
+  const churnSuppress =
+    draft.metrics.pendentes === 0 ||
+    draft.satisfaction?.churnRisk === "baixo" ||
+    (draft.metrics.pctResolucao >= 95 && !ar?.churnSignals?.length);
+  y = sectionTitle(doc, `${ar ? "12" : "6"}. Deteccao e Evidenciacao do Alerta de Risco de Churn`, margin, y);
+  if (!churnSuppress && ar?.churnSignals?.length) {
+    ar.churnSignals.forEach((s, idx) => {
+      const quoteText = `"${sanitize(s.quote)}"`;
+      const impactText = `Impacto: ${sanitize(s.impact)}`;
+      const qLines = doc.splitTextToSize(quoteText, contentW - 24) as string[];
+      const iLines = doc.splitTextToSize(impactText, contentW - 24) as string[];
+      const boxH = 30 + qLines.length * 11 + iLines.length * 10 + 10;
+      y = ensureSpace(doc, y, boxH + 8, margin);
+      doc.setDrawColor(...ALERT_BORDER);
+      doc.setFillColor(...ALERT_BG);
+      doc.roundedRect(margin, y, contentW, boxH, 3, 3, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...ALERT_BORDER);
+      doc.text(
+        `Sinal n${String.fromCharCode(186)} ${idx + 1}   •   Peso: ${sanitize(s.weight)}   •   Data: ${sanitize(s.date)}`,
+        margin + 10,
+        y + 15,
       );
-    }
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(...TEXT);
+      let qy = y + 28;
+      for (const ln of qLines) {
+        doc.text(ln, margin + 10, qy);
+        qy += 11;
+      }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...TEXT);
+      for (const ln of iLines) {
+        doc.text(ln, margin + 10, qy);
+        qy += 10;
+      }
+      y += boxH + 8;
+    });
+  } else {
+    y = paragraph(
+      doc,
+      "Nao foram encontrados indicios objetivos suficientes de risco de churn no periodo analisado.",
+      margin,
+      y,
+      contentW,
+      9.5,
+    );
+  }
 
-    // ============ 12. DIAGNOSTICO FINAL ============
+  if (ar) {
+
+    // ============ 13. DIAGNOSTICO FINAL ============
     y = sectionTitle(doc, "13. Diagnostico Final", margin, y);
     y = renderListBox(doc, "Pontos Positivos", ar.diagnosis?.strengths ?? [], margin, y, contentW);
     y = renderListBox(doc, "Pontos de Atencao", ar.diagnosis?.attentionPoints ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Oportunidades — Produto", ar.diagnosis?.opportunities?.product ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Oportunidades — Suporte", ar.diagnosis?.opportunities?.support ?? [], margin, y, contentW);
-    y = renderListBox(doc, "Oportunidades — Processo", ar.diagnosis?.opportunities?.process ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Oportunidades - Produto", ar.diagnosis?.opportunities?.product ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Oportunidades - Suporte", ar.diagnosis?.opportunities?.support ?? [], margin, y, contentW);
+    y = renderListBox(doc, "Oportunidades - Processo", ar.diagnosis?.opportunities?.process ?? [], margin, y, contentW);
 
-    // ============ 13. PLANO DE ACAO ============
+    // ============ 14. PLANO DE ACAO ============
     y = sectionTitle(doc, "14. Plano de Acao e Proximos Passos", margin, y);
     y = renderListBox(
       doc,
       "Proximos Passos Imediatos",
-      ar.conclusion?.nextSteps?.map((s) => `${sanitize(s.action)} — Responsavel: ${sanitize(s.owner)}`) ?? [],
+      ar.conclusion?.nextSteps?.map((s) => `${sanitize(s.action)} - Responsavel: ${sanitize(s.owner)}`) ?? [],
       margin,
       y,
       contentW,
@@ -793,8 +890,8 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
   }
 
-  // ============ 15. INDICADORES VISUAIS ============
-  y = sectionTitle(doc, `${ar ? "15" : "5"}. Indicadores Visuais`, margin, y);
+  // ============ ANEXO B - INDICADORES VISUAIS ============
+  y = sectionTitle(doc, `Anexo B - Indicadores Visuais`, margin, y);
   y = renderVisualIndicators(doc, draft, margin, y, contentW);
 
   // ============ 16. RESUMO CONSOLIDADO (final, em paragrafos) ============
@@ -937,98 +1034,130 @@ function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: n
 
 function renderVisualIndicators(doc: jsPDF, draft: ReportDraft, x: number, y: number, w: number): number {
   const m = draft.metrics;
-  y = ensureSpace(doc, y, 140, x);
 
-  // Barras: Solicitações vs Respostas vs Pendências
-  const maxV = Math.max(m.totalSolicitacoes, m.totalRespostas, m.pendentes, 1);
-  const barLabels: [string, number, [number, number, number]][] = [
-    ["Solicitacoes", m.totalSolicitacoes, BLUE],
-    ["Respostas", m.totalRespostas, [46, 139, 87]],
-    ["Pendencias", m.pendentes, ALERT_BORDER],
-    ["% Resolucao", Math.round(m.pctResolucao), NAVY_DEEP],
+  // ---------- 4 CARDS DE TOPO (Solicitações, Respostas, Pendentes, % Resolução) ----------
+  const kpiGap = 8;
+  const kpiW = (w - kpiGap * 3) / 4;
+  const kpiH = 62;
+  y = ensureSpace(doc, y, kpiH + 130, x);
+  const kpis: { label: string; value: string; color: [number, number, number]; alertBg?: boolean }[] = [
+    { label: "Solicitacoes", value: String(m.totalSolicitacoes), color: [46, 111, 184] },
+    { label: "Respostas", value: String(m.totalRespostas), color: [26, 61, 110] },
+    { label: "Pendentes", value: String(m.pendentes), color: ALERT_BORDER, alertBg: m.pendentes > 0 },
+    { label: "% Resolucao", value: `${Math.round(m.pctResolucao)}%`, color: [34, 130, 70] },
   ];
-  const barX = x;
-  const barW = w * 0.55;
-  let by = y;
+  for (let i = 0; i < kpis.length; i++) {
+    const c = kpis[i];
+    const cx = x + i * (kpiW + kpiGap);
+    doc.setFillColor(...(c.alertBg ? ALERT_BG : [240, 243, 246] as [number, number, number]));
+    doc.roundedRect(cx, y, kpiW, kpiH, 4, 4, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(...c.color);
+    doc.text(c.value, cx + 12, y + 30);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(c.label, cx + 12, y + 50);
+  }
+  y += kpiH + 10;
+
+  // ---------- 2 PAINÉIS: Quem mais solicitou / Quem mais respondeu ----------
+  const panelGap = 10;
+  const panelW = (w - panelGap) / 2;
+  const bars = (title: string, entries: { name: string; count: number }[], color: [number, number, number], px: number, py: number) => {
+    const rows = entries.slice(0, 4);
+    const rowsH = Math.max(1, rows.length) * 14 + 8;
+    const h = 26 + rowsH;
+    doc.setDrawColor(...RULE);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(px, py, panelW, h, 4, 4, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...NAVY);
+    doc.text(title, px + 10, py + 16);
+    const max = Math.max(1, ...rows.map((r) => r.count));
+    const labelW = 90;
+    const barMaxW = panelW - labelW - 40;
+    let by = py + 30;
+    for (const r of rows) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...TEXT);
+      doc.text(sanitize(r.name).slice(0, 24), px + 10, by + 7);
+      const filled = Math.max(4, (r.count / max) * barMaxW);
+      doc.setFillColor(...RULE);
+      doc.roundedRect(px + labelW, by, barMaxW, 8, 2, 2, "F");
+      doc.setFillColor(...color);
+      doc.roundedRect(px + labelW, by, filled, 8, 2, 2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...NAVY);
+      doc.text(String(r.count), px + labelW + filled + 4, by + 7);
+      by += 14;
+    }
+    return h;
+  };
+  const hLeft = bars("Quem mais solicitou", m.topRequesters, [46, 111, 184], x, y);
+  const hRight = bars("Quem mais respondeu", m.topResponders, [46, 111, 184], x + panelW + panelGap, y);
+  y += Math.max(hLeft, hRight) + panelGap;
+
+  // ---------- Painel Pendência × Resolução (barra empilhada) ----------
+  y = ensureSpace(doc, y, 90, x);
+  const stackH = 78;
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, panelW, stackH, 4, 4, "FD");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
+  doc.setFontSize(9.5);
   doc.setTextColor(...NAVY);
-  doc.text("Volume Operacional", barX, by);
-  by += 12;
-  for (const [label, value, color] of barLabels) {
+  doc.text("Pendencia x Resolucao", x + 10, y + 16);
+  const stackY = y + 26;
+  const stackBarW = panelW - 20;
+  const total = Math.max(1, m.resolvidas + m.pendentes);
+  const resW = (m.resolvidas / total) * stackBarW;
+  doc.setFillColor(34, 130, 70);
+  doc.rect(x + 10, stackY, resW, 12, "F");
+  doc.setFillColor(...ALERT_BORDER);
+  doc.rect(x + 10 + resW, stackY, stackBarW - resW, 12, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(34, 130, 70);
+  doc.text(`Resolvidas: ${m.resolvidas} (${Math.round((m.resolvidas / total) * 100)}%)`, x + 10, stackY + 26);
+  doc.setTextColor(...ALERT_BORDER);
+  doc.text(`Pendentes: ${m.pendentes} (${Math.round((m.pendentes / total) * 100)}%)`, x + 10, stackY + 40);
+
+  // ---------- Painel Satisfação do cliente (donut simplificado) ----------
+  const px2 = x + panelW + panelGap;
+  doc.roundedRect(px2, y, panelW, stackH, 4, 4, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...NAVY);
+  doc.text("Satisfacao do cliente", px2 + 10, y + 16);
+  const s = draft.metrics.satisfacao;
+  const totalS = Math.max(1, s.muitoSatisfeito + s.satisfeito + s.neutro + s.insatisfeito + s.churnRisk);
+  const rows: { lbl: string; v: number; c: [number, number, number] }[] = [
+    { lbl: "Muito satisfeito", v: s.muitoSatisfeito, c: [34, 130, 70] },
+    { lbl: "Satisfeito", v: s.satisfeito, c: [46, 139, 87] },
+    { lbl: "Neutro", v: s.neutro, c: MUTED },
+    { lbl: "Insatisfeito", v: s.insatisfeito, c: [200, 90, 30] },
+    { lbl: "Risco de churn", v: s.churnRisk, c: ALERT_BORDER },
+  ];
+  let ry2 = y + 28;
+  for (const r of rows) {
+    doc.setFillColor(...r.c);
+    doc.circle(px2 + 14, ry2 + 3, 3, "F");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...TEXT);
-    doc.text(label, barX, by + 8);
-    const reference = label === "% Resolucao" ? 100 : maxV;
-    const filled = Math.max(2, (value / reference) * (barW - 100));
-    doc.setFillColor(...RULE);
-    doc.roundedRect(barX + 80, by, barW - 100, 8, 2, 2, "F");
-    doc.setFillColor(...color);
-    doc.roundedRect(barX + 80, by, filled, 8, 2, 2, "F");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...NAVY);
-    doc.text(label === "% Resolucao" ? `${value}%` : String(value), barX + barW - 15, by + 8, { align: "right" });
-    by += 16;
+    doc.text(`${r.lbl}: ${r.v} (${Math.round((r.v / totalS) * 100)}%)`, px2 + 22, ry2 + 5);
+    ry2 += 10;
   }
 
-  // Painel lateral: Top solicitantes / respondedores
-  const sideX = x + barW + 10;
-  const sideW = w - barW - 10;
-  let sy = y;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...NAVY);
-  doc.text("Quem mais solicitou", sideX, sy);
-  sy += 12;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...TEXT);
-  for (const r of m.topRequesters.slice(0, 3)) {
-    doc.text(`• ${sanitize(r.name)} (${r.count})`, sideX, sy);
-    sy += 11;
-  }
-  sy += 4;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...NAVY);
-  doc.text("Quem mais respondeu", sideX, sy);
-  sy += 12;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...TEXT);
-  for (const r of m.topResponders.slice(0, 3)) {
-    doc.text(`• ${sanitize(r.name)} (${r.count})`, sideX, sy);
-    sy += 11;
-  }
-
-  y = Math.max(by, sy) + 8;
-
-  // Faixa de satisfação
-  const sat = draft.satisfaction;
-  if (sat) {
-    y = ensureSpace(doc, y, 34, x);
-    const emoji =
-      sat.sentiment === "muito_satisfeito" || sat.sentiment === "satisfeito"
-        ? "Satisfeito"
-        : sat.sentiment === "neutro"
-          ? "Neutro"
-          : "Insatisfeito";
-    doc.setFillColor(...INFO_BG);
-    doc.roundedRect(x, y, w, 26, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...NAVY);
-    doc.text(
-      `Satisfacao: ${emoji}   |   Score: ${sat.score}/100   |   Risco de Churn: ${sanitize(sat.churnRisk)}   |   Evolucao: ${sanitize(sat.evolution)}`,
-      x + 10,
-      y + 17,
-    );
-    y += 34;
-  }
-
+  y += stackH + 10;
   return y;
 }
+
 
 function renderQuadrant(
   doc: jsPDF,
@@ -1319,20 +1448,21 @@ function renderPendingDetail(
   }
   y = ensureSpace(doc, y, neededH + 12, x);
 
-  // Cabecalho do bloco
+  // Cabecalho do bloco (mais alto e com espaço abaixo para não colidir com o título)
+  const bannerH = 26;
   doc.setFillColor(...NAVY_DEEP);
-  doc.roundedRect(x, y, w, 22, 3, 3, "F");
+  doc.roundedRect(x, y, w, bannerH, 3, 3, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
+  doc.setFontSize(10);
   doc.setTextColor(255, 255, 255);
-  doc.text(`${idStr}  —  DATA DE IDENTIFICACAO: ${sanitize(d.dateLabel)}`, x + 10, y + 14);
-  y += 26;
+  doc.text(`${idStr}  —  DATA DE IDENTIFICACAO: ${sanitize(d.dateLabel)}`, x + 10, y + 17);
+  y += bannerH + 10;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5);
   doc.setTextColor(...NAVY);
   doc.text(title, x, y);
-  y += 14;
+  y += 16;
 
   // Linhas rotulo -> valor
   doc.setDrawColor(...RULE);
