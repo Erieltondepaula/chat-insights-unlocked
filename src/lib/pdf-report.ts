@@ -513,25 +513,27 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     if (ar.csat) ar.csat.classification = "Satisfeito";
   }
 
-  // ============ CABECALHO CENTRALIZADO ============
-  doc.setFillColor(...NAVY_DEEP);
-  doc.rect(0, 0, pageW, 90, "F");
-  doc.setTextColor(255, 255, 255);
+  // ============ CABECALHO LIMPO (nome empresa + titulo + subtitulo) ============
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  doc.text(sanitize(draft.title), pageW / 2, 40, { align: "center" });
+  doc.setTextColor(20, 100, 90);
+  doc.text(sanitize(draft.clientName || draft.title).toUpperCase(), margin, y + 8);
+  y += 22;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.5);
-  doc.text(sanitize(draft.subtitle), pageW / 2, 60, { align: "center" });
+  doc.setTextColor(...MUTED);
+  doc.text(sanitize(draft.subtitle), margin, y);
+  y += 10;
   doc.setFontSize(8.5);
-  doc.setTextColor(210, 220, 235);
   doc.text(
     `Emissao: ${sanitize(draft.emissionDate)}   |   Modulo: ${sanitize(draft.moduleAudited)}   |   Status: ${sanitize(draft.status)}`,
-    pageW / 2,
-    78,
-    { align: "center" },
+    margin,
+    y + 4,
   );
-  y = 110;
+  y += 22;
+
+  // ============ INDICADORES VISUAIS DE DESEMPENHO (topo, cartoes) ============
+  y = renderKpiCards(doc, draft, margin, y, contentW);
 
   // ============ 1. PAINEL EXECUTIVO ============
   y = sectionTitle(doc, "1. Painel Executivo do Atendimento", margin, y);
