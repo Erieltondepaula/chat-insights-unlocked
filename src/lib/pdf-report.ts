@@ -1252,3 +1252,109 @@ function renderSentimentSection(doc: jsPDF, draft: ReportDraft, x: number, y: nu
   return y + 6;
 }
 
+function renderKpiCards(doc: jsPDF, draft: ReportDraft, x: number, y: number, w: number): number {
+  const m = draft.metrics;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(20, 100, 90);
+  doc.text("Indicadores Visuais de Desempenho", x, y);
+  y += 14;
+
+  const cards: { label: string; value: string; color: [number, number, number]; alertBg?: boolean }[] = [
+    { label: "Total Demandas", value: String(m.totalSolicitacoes), color: [20, 60, 100] },
+    { label: "Resolvidas", value: String(m.resolvidas), color: [34, 130, 70] },
+    { label: "Pendentes", value: String(m.pendentes), color: ALERT_BORDER, alertBg: m.pendentes > 0 },
+    { label: "Taxa Resolucao", value: `${Math.round(m.pctResolucao)}%`, color: [34, 130, 70] },
+  ];
+  const gap = 10;
+  const cardW = (w - gap * 3) / 4;
+  const cardH = 60;
+  y = ensureSpace(doc, y, cardH + 10, x);
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    const cx = x + i * (cardW + gap);
+    doc.setFillColor(...(c.alertBg ? ALERT_BG : [240, 243, 246] as [number, number, number]));
+    doc.roundedRect(cx, y, cardW, cardH, 4, 4, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(...c.color);
+    doc.text(c.value, cx + cardW / 2, y + 32, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    doc.text(c.label, cx + cardW / 2, y + 50, { align: "center" });
+  }
+  return y + cardH + 16;
+}
+
+function renderPendingDetail(
+  doc: jsPDF,
+  d: DemandItem,
+  idNum: number,
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const idStr = `ID #${String(idNum).padStart(2, "0")}`;
+  const title = sanitize(d.demandSummary).slice(0, 90).replace(/^CRITICO:\s*/i, "") || "Pendencia sem titulo";
+
+  const rows: [string, string][] = [
+    ["Problema identificado", sanitize(d.demandSummary) || "—"],
+    ["Impacto operacional", d.keyQuotes?.length
+      ? `Impacto reforcado pelo cliente: "${sanitize(d.keyQuotes[0])}"`
+      : "Interrupcao parcial do fluxo operacional do modulo relacionado."],
+    ["Analise tecnica realizada", sanitize(d.responseSummary) || "Analise em andamento pelo suporte."],
+    ["Posicionamento da equipe", sanitize(d.responder) ? `Responsavel: ${sanitize(d.responder)}` : "Aguardando alocacao de responsavel."],
+    ["Status atual", sanitize(d.status)],
+    ["Acao necessaria / previsao", sanitize(d.nextSteps) || "Aguardando homologacao ou retorno do cliente."],
+  ];
+
+  // Pre-calcula altura
+  let neededH = 34;
+  const bodyLines: { label: string; lines: string[] }[] = [];
+  for (const [lbl, val] of rows) {
+    const ls = doc.splitTextToSize(sanitize(val), w - 130) as string[];
+    bodyLines.push({ label: lbl, lines: ls });
+    neededH += Math.max(14, ls.length * 11) + 4;
+  }
+  y = ensureSpace(doc, y, neededH + 12, x);
+
+  // Cabecalho do bloco
+  doc.setFillColor(...NAVY_DEEP);
+  doc.roundedRect(x, y, w, 22, 3, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text(`${idStr}  —  DATA DE IDENTIFICACAO: ${sanitize(d.dateLabel)}`, x + 10, y + 14);
+  y += 26;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(...NAVY);
+  doc.text(title, x, y);
+  y += 14;
+
+  // Linhas rotulo -> valor
+  doc.setDrawColor(...RULE);
+  for (const { label, lines } of bodyLines) {
+    const rowH = Math.max(14, lines.length * 11) + 4;
+    doc.setFillColor(248, 250, 252);
+    doc.rect(x, y, w, rowH, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...NAVY);
+    doc.text(label, x + 6, y + 11);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXT);
+    let ly = y + 11;
+    for (const ln of lines) {
+      doc.text(ln, x + 128, ly);
+      ly += 11;
+    }
+    doc.line(x, y + rowH, x + w, y + rowH);
+    y += rowH;
+  }
+  return y + 12;
+}
+
