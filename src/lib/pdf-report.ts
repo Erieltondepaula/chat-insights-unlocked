@@ -601,6 +601,16 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     }
   }
 
+  // ============ 4B. DETALHAMENTO CRONOLOGICO DAS DEMANDAS PENDENTES ============
+  const pendingDemands = (draft.demands ?? []).filter((d) => /pendente/i.test(d.status));
+  if (pendingDemands.length) {
+    y = sectionTitle(doc, "4.1 Detalhamento Cronologico das Demandas Pendentes", margin, y);
+    pendingDemands.forEach((d, idx) => {
+      y = renderPendingDetail(doc, d, idx + 1, margin, y, contentW);
+    });
+  }
+
+
   if (ar) {
     // ============ 5. AUDITORIA COMPORTAMENTAL ============
     y = sectionTitle(doc, "5. Auditoria Comportamental da Equipe de Suporte", margin, y);
