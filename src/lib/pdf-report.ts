@@ -402,7 +402,7 @@ function buildFallbackConsolidatedSummary(
   return [p1, p2, p3, p4, p5].join("\n\n");
 }
 
-
+function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = null): ReportMetrics {
   const totalSolicitacoes = a.demands.length;
   const resolvidas = a.demands.filter((d) => d.status === "resolvido").length;
   const pendentes = a.demands.filter((d) => d.status === "pendente").length;
