@@ -88,6 +88,11 @@ function Index() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_SATISFACTION_SYSTEM_PROMPT;
+    return localStorage.getItem("satisfaction_prompt_v1") || DEFAULT_SATISFACTION_SYSTEM_PROMPT;
+  });
+  const [promptSaved, setPromptSaved] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
