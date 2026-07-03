@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
-import { analyzeSatisfaction, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
+import { analyzeSatisfaction, DEFAULT_SATISFACTION_SYSTEM_PROMPT, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
 import { buildDraft, generatePdf, type AttachmentInsight, type ReportDraft } from "@/lib/pdf-report";
 
 export const Route = createFileRoute("/")({
@@ -88,6 +88,11 @@ function Index() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_SATISFACTION_SYSTEM_PROMPT;
+    return localStorage.getItem("satisfaction_prompt_v1") || DEFAULT_SATISFACTION_SYSTEM_PROMPT;
+  });
+  const [promptSaved, setPromptSaved] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
@@ -220,6 +225,7 @@ function Index() {
             clientGender: gender,
             conversationText: convoText || "(sem texto)",
             attachmentInsights: insights.map((i) => i.summary).filter(Boolean),
+            customSystemPrompt: customPrompt,
             stats: {
               total: a.demandStats.total,
               resolvidas: a.demandStats.resolvidas,
@@ -436,6 +442,52 @@ function Index() {
 
         {draft && analysis && (
           <div className="mt-10 space-y-6">
+            <div className="rounded-xl border border-emerald-100 bg-white p-6 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-emerald-900">Prompt da Análise (editável)</h4>
+                {promptSaved && <span className="text-xs text-emerald-700">{promptSaved}</span>}
+              </div>
+              <textarea
+                className="h-56 w-full rounded-md border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-emerald-900 focus:border-emerald-500 focus:outline-none"
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    localStorage.setItem("satisfaction_prompt_v1", customPrompt);
+                    setPromptSaved("Prompt salvo. Vale para as próximas análises.");
+                    setTimeout(() => setPromptSaved(null), 3000);
+                  }}
+                  className="rounded-md bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+                >
+                  Salvar prompt
+                </button>
+                <button
+                  onClick={() => {
+                    setCustomPrompt(DEFAULT_SATISFACTION_SYSTEM_PROMPT);
+                    localStorage.removeItem("satisfaction_prompt_v1");
+                    setPromptSaved("Prompt restaurado para o padrão.");
+                    setTimeout(() => setPromptSaved(null), 3000);
+                  }}
+                  className="rounded-md border border-emerald-300 px-4 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                >
+                  Restaurar padrão
+                </button>
+                <button
+                  onClick={() => {
+                    setCustomPrompt("");
+                    localStorage.removeItem("satisfaction_prompt_v1");
+                    setPromptSaved("Prompt limpo.");
+                    setTimeout(() => setPromptSaved(null), 3000);
+                  }}
+                  className="rounded-md border border-red-200 px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
               {kpis!.map((k) => (
                 <div key={k.label} className="rounded-xl border border-emerald-100 bg-white p-3 text-center shadow-sm">
