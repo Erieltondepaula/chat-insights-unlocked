@@ -329,9 +329,10 @@ export function buildDraft(
     satisfaction,
   };
 
-  draft.consolidatedSummary =
-    (satisfaction?.consolidatedSummary && satisfaction.consolidatedSummary.trim()) ||
-    "Análise consolidada executada pelo sistema.";
+  const llmSummary = satisfaction?.consolidatedSummary?.trim() ?? "";
+  draft.consolidatedSummary = llmSummary.length >= 400
+    ? llmSummary
+    : buildFallbackConsolidatedSummary(a, draft, satisfaction);
   return draft;
 }
 
