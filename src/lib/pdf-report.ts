@@ -336,7 +336,73 @@ export function buildDraft(
   return draft;
 }
 
-function buildMetrics(a: Analysis, satisfaction: SatisfactionAnalysis | null = null): ReportMetrics {
+function buildFallbackConsolidatedSummary(
+  a: Analysis,
+  draft: ReportDraft,
+  sat: SatisfactionAnalysis | null,
+): string {
+  const m = draft.metrics;
+  const periodo = `${fmtDateOnly(a.firstDate)} a ${fmtDateOnly(a.lastDate)}`;
+  const cliente = draft.clientName || "a clinica contratante";
+  const responders = m.topResponders.map((r) => `${r.name} (${r.count})`).join(", ") || "equipe Amigo Flow";
+  const requesters = m.topRequesters.map((r) => `${r.name} (${r.count})`).join(", ") || "equipe operacional do cliente";
+  const temas = draft.mainThemes.replace(/^•\s?/gm, "").split("\n").filter(Boolean).join("; ");
+  const pendentesLista = a.demands.filter((d) => d.status === "pendente").slice(0, 3)
+    .map((d) => `"${sanitize(stripMediaTokens(d.message).text).slice(0, 160)}"`).join("; ") || "sem pendencias criticas mapeadas";
+  const resolvidasLista = a.demands.filter((d) => d.status === "resolvido").slice(0, 3)
+    .map((d) => `"${sanitize(stripMediaTokens(d.message).text).slice(0, 140)}"`).join("; ") || "diversas solicitacoes concluidas pontualmente";
+
+  const p1 =
+    `O presente relatorio consolida a jornada de atendimento de ${cliente} no periodo de ${periodo}, ` +
+    `abrangendo ${m.totalSolicitacoes} solicitacao(oes) registradas via WhatsApp junto a equipe Amigo Flow. ` +
+    `Foram computadas ${m.resolvidas} demandas resolvidas e ${m.pendentes} pendencias, resultando em taxa objetiva ` +
+    `de resolucao de ${Math.round(m.pctResolucao)}%. Os principais solicitantes foram ${requesters}, enquanto ` +
+    `${responders} respondeu pela maior parte das devolutivas tecnicas. O perfil operacional envolve ajustes de ` +
+    `parametrizacao, orientacoes de uso do Agente Flow e validacoes de fluxo. A leitura macro deste periodo indica ` +
+    `um atendimento com volume tipico de solicitacoes recorrentes, mesclando itens de baixa complexidade e ` +
+    `situacoes pontuais de maior sensibilidade operacional que merecem acompanhamento executivo continuo.`;
+
+  const p2 =
+    `Do lado do cliente, as dores mais recorrentes se concentram em: ${temas || "ajustes de fluxo, agendamento e regras de convenio"}. ` +
+    `Trechos representativos capturados no historico incluem ${pendentesLista}. Essas manifestacoes evidenciam que, ` +
+    `em determinados momentos, o time da clinica sentiu necessidade de resposta mais rapida ou clareza adicional ` +
+    `sobre limitacoes nativas da ferramenta. O tom variou entre pedidos objetivos, questionamentos tecnicos e, ` +
+    `em ocasioes especificas, sinais de frustacao ligados a impacto operacional imediato no atendimento de pacientes. ` +
+    `A leitura contextual reforca a importancia de reduzir tempo entre solicitacao e devolutiva nos casos que envolvem ` +
+    `bloqueio total de fluxo, garantindo que a percepcao de valor da automacao se mantenha alta ao longo do ciclo.`;
+
+  const p3 =
+    `Sob o ponto de vista de reincidencia e gargalos, foram identificadas ${m.pendentes} pendencia(s) ativa(s) ` +
+    `e ${sat?.repeatedRequestsCount ?? 0} solicitacao(oes) repetida(s), o que sinaliza pontos que ainda demandam ` +
+    `intervencao estrutural do produto ou treinamento adicional do cliente. Os principais responsaveis pela resolucao, ` +
+    `${responders}, atuaram de forma tecnica e resolutiva, aplicando parametrizacoes e correcoes rapidas na maior ` +
+    `parte dos casos. Ainda assim, algumas limitacoes nativas do modulo precisam ser posicionadas de forma transparente ` +
+    `para a clinica, evitando expectativas divergentes em relacao ao comportamento esperado do Agente Flow em regras ` +
+    `de convenio, calendario e reagendamento automatico.`;
+
+  const p4 =
+    `Nos momentos positivos, o historico registra ${sat?.praisesCount ?? 0} elogio(s) explicito(s) e diversas ` +
+    `confirmacoes de resolucao. Entre os casos concluidos, destacam-se ${resolvidasLista}, mostrando que o suporte ` +
+    `consegue endereçar rapidamente correcoes de agendamento, ajustes de fluxo e duvidas de operacao. Esses ganhos ` +
+    `reforcam a percepcao de que o Agente Flow entrega valor real quando a parametrizacao esta alinhada as regras ` +
+    `especificas da clinica, e devem ser evidenciados junto a diretoria da conta como prova de eficiencia continua ` +
+    `do modulo. A ausencia de menções explicitas a cancelamento em grande parte do periodo tambem e um indicador ` +
+    `positivo sobre o vinculo comercial vigente.`;
+
+  const p5 =
+    `Recomendacao executiva para as equipes de Churn, Gerencia de Conta e Implantacao: (1) priorizar imediatamente ` +
+    `as ${m.pendentes} pendencia(s) mapeadas com plano de acao e responsavel definido; (2) agendar reuniao de ` +
+    `alinhamento com a clinica para revisar regras de convenio e limites nativos do modulo, prevenindo reincidencia; ` +
+    `(3) reforcar treinamento operacional focado nos temas ${temas || "ajustes de fluxo e agendamento"}; ` +
+    `(4) monitorar indicadores de satisfacao (${sat?.score ?? Math.round(m.pctResolucao)}/100) e risco de churn ` +
+    `(atualmente ${sat?.churnRisk ?? "baixo"}) semanalmente; (5) documentar formalmente ao cliente quando o modulo ` +
+    `nao atender uma regra especifica, permitindo decisao consciente sobre manter, adaptar ou descontinuar o uso. ` +
+    `Com essas acoes, o atendimento tende a evoluir de reativo para preditivo, reduzindo desgaste operacional.`;
+
+  return [p1, p2, p3, p4, p5].join("\n\n");
+}
+
+
   const totalSolicitacoes = a.demands.length;
   const resolvidas = a.demands.filter((d) => d.status === "resolvido").length;
   const pendentes = a.demands.filter((d) => d.status === "pendente").length;
