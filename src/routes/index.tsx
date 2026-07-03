@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
-import { analyzeSatisfaction, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
+import { analyzeSatisfaction, DEFAULT_SATISFACTION_SYSTEM_PROMPT, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
 import { buildDraft, generatePdf, type AttachmentInsight, type ReportDraft } from "@/lib/pdf-report";
 
 export const Route = createFileRoute("/")({
