@@ -1319,20 +1319,21 @@ function renderPendingDetail(
   }
   y = ensureSpace(doc, y, neededH + 12, x);
 
-  // Cabecalho do bloco
+  // Cabecalho do bloco (mais alto e com espaço abaixo para não colidir com o título)
+  const bannerH = 26;
   doc.setFillColor(...NAVY_DEEP);
-  doc.roundedRect(x, y, w, 22, 3, 3, "F");
+  doc.roundedRect(x, y, w, bannerH, 3, 3, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
+  doc.setFontSize(10);
   doc.setTextColor(255, 255, 255);
-  doc.text(`${idStr}  —  DATA DE IDENTIFICACAO: ${sanitize(d.dateLabel)}`, x + 10, y + 14);
-  y += 26;
+  doc.text(`${idStr}  —  DATA DE IDENTIFICACAO: ${sanitize(d.dateLabel)}`, x + 10, y + 17);
+  y += bannerH + 10;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5);
   doc.setTextColor(...NAVY);
   doc.text(title, x, y);
-  y += 14;
+  y += 16;
 
   // Linhas rotulo -> valor
   doc.setDrawColor(...RULE);
