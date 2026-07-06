@@ -905,12 +905,28 @@ export function generatePdf(draft: ReportDraft): jsPDF {
     .map((p) => p.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 5);
+  const paragraphHeadings = [
+    "Contexto Geral e Perfil Operacional",
+    "Dores e Impactos Relatados pela Cliente",
+    "Reincidencias, Gargalos e Comportamento do Suporte",
+    "Momentos Positivos, Ganhos e Elogios",
+    "Recomendacao Executiva para Churn, Conta e Implantacao",
+  ];
   if (!paragraphs.length) {
     y = paragraph(doc, "Analise consolidada nao disponivel para este atendimento.", margin, y, contentW, 10);
   } else {
-    for (const p of paragraphs) {
-      y = paragraph(doc, p.slice(0, 2000), margin, y, contentW, 9.5);
-      y += 8;
+    for (let i = 0; i < paragraphs.length; i++) {
+      y = ensureSpace(doc, y, 40, margin);
+      // Barra + titulo do paragrafo
+      doc.setFillColor(...BLUE);
+      doc.rect(margin, y - 2, 3, 12, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...NAVY);
+      doc.text(`P${i + 1} - ${paragraphHeadings[i] ?? "Analise"}`, margin + 8, y + 7);
+      y += 16;
+      y = renderRichParagraph(doc, paragraphs[i].slice(0, 2200), margin, y, contentW, 9.5, 13);
+      y += 10;
     }
   }
 
