@@ -288,7 +288,7 @@ function Index() {
   }
 
   function resetDraft() {
-    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights, satisfaction));
+    if (analysis) setDraft(buildDraft(analysis, extractClientName(sourceLabel) || sourceLabel || "Relatório", attachmentInsights, satisfaction));
   }
 
   function downloadPdf() {
