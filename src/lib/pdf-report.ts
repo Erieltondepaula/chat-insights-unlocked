@@ -1166,6 +1166,8 @@ function renderVisualIndicators(doc: jsPDF, draft: ReportDraft, x: number, y: nu
 
   // ---------- Painel Satisfação do cliente (donut simplificado) ----------
   const px2 = x + panelW + panelGap;
+  doc.setDrawColor(...RULE);
+  doc.setFillColor(255, 255, 255);
   doc.roundedRect(px2, y, panelW, stackH, 4, 4, "FD");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
