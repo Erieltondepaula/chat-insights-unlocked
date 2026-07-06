@@ -442,7 +442,8 @@ function Index() {
 
         {draft && analysis && (
           <div className="mt-10 space-y-6">
-            <div className="rounded-xl border border-emerald-100 bg-white p-6 shadow-sm">
+            <div className="sticky top-4 z-30 rounded-xl border border-emerald-200 bg-white/95 p-6 shadow-lg backdrop-blur">
+
               <div className="mb-3 flex items-center justify-between">
                 <h4 className="text-lg font-semibold text-emerald-900">Prompt da Análise (editável)</h4>
                 {promptSaved && <span className="text-xs text-emerald-700">{promptSaved}</span>}

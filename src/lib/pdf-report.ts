@@ -662,7 +662,9 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
   // ============ 4. DEMANDAS E DEVOLUTIVAS (blocos separados) ============
   if (draft.demands?.length) {
-    y = sectionTitle(doc, "4. Demandas do Cliente e Devolutivas do Suporte", margin, y);
+    // Reserva espaço para o título + primeiro bloco, evitando título órfão
+    const firstBlockH = estimateDemandBlockHeight(doc, draft.demands[0], contentW);
+    y = sectionTitle(doc, "4. Demandas do Cliente e Devolutivas do Suporte", margin, y, Math.min(firstBlockH + 30, 260));
     for (const d of draft.demands) {
       y = renderDemandBlock(doc, d, margin, y, contentW);
     }
@@ -671,11 +673,12 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   // ============ 4B. DETALHAMENTO CRONOLOGICO DAS DEMANDAS PENDENTES ============
   const pendingDemands = (draft.demands ?? []).filter((d) => /pendente/i.test(d.status));
   if (pendingDemands.length) {
-    y = sectionTitle(doc, "4.1 Detalhamento Cronologico das Demandas Pendentes", margin, y);
+    y = sectionTitle(doc, "4.1 Detalhamento Cronologico das Demandas Pendentes", margin, y, 180);
     pendingDemands.forEach((d, idx) => {
       y = renderPendingDetail(doc, d, idx + 1, margin, y, contentW);
     });
   }
+
 
 
   if (ar) {
@@ -926,7 +929,25 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   return doc;
 }
 
+function estimateDemandBlockHeight(doc: jsPDF, d: DemandItem, w: number): number {
+  const halfW = (w - 10) / 2;
+  const demandLines = doc.splitTextToSize(sanitize(d.demandSummary), halfW - 16) as string[];
+  const responseLines = doc.splitTextToSize(sanitize(d.responseSummary), halfW - 16) as string[];
+  const quoteLines: string[] = [];
+  for (const q of d.keyQuotes ?? []) {
+    quoteLines.push(...(doc.splitTextToSize(`"${sanitize(q)}"`, halfW - 20) as string[]));
+  }
+  const solLines = doc.splitTextToSize(`Solucao: ${sanitize(d.solution || "—")}`, halfW - 16) as string[];
+  const isCritical = /pendente/i.test(d.status) || (d.keyQuotes && d.keyQuotes.length > 0) || /^CRITICO/i.test(d.problem);
+  const bannerH = isCritical ? 16 : 0;
+  const leftH = 46 + demandLines.length * 11 + (quoteLines.length ? 8 + quoteLines.length * 10 : 0) + 8;
+  const rightH = 46 + responseLines.length * 11 + solLines.length * 10 + 8;
+  const boxH = Math.max(leftH, rightH, 90);
+  return bannerH + boxH + 12;
+}
+
 function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
+
   const halfW = (w - 10) / 2;
 
   // Compute needed heights
