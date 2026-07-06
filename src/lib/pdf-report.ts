@@ -929,7 +929,25 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   return doc;
 }
 
+function estimateDemandBlockHeight(doc: jsPDF, d: DemandItem, w: number): number {
+  const halfW = (w - 10) / 2;
+  const demandLines = doc.splitTextToSize(sanitize(d.demandSummary), halfW - 16) as string[];
+  const responseLines = doc.splitTextToSize(sanitize(d.responseSummary), halfW - 16) as string[];
+  const quoteLines: string[] = [];
+  for (const q of d.keyQuotes ?? []) {
+    quoteLines.push(...(doc.splitTextToSize(`"${sanitize(q)}"`, halfW - 20) as string[]));
+  }
+  const solLines = doc.splitTextToSize(`Solucao: ${sanitize(d.solution || "—")}`, halfW - 16) as string[];
+  const isCritical = /pendente/i.test(d.status) || (d.keyQuotes && d.keyQuotes.length > 0) || /^CRITICO/i.test(d.problem);
+  const bannerH = isCritical ? 16 : 0;
+  const leftH = 46 + demandLines.length * 11 + (quoteLines.length ? 8 + quoteLines.length * 10 : 0) + 8;
+  const rightH = 46 + responseLines.length * 11 + solLines.length * 10 + 8;
+  const boxH = Math.max(leftH, rightH, 90);
+  return bannerH + boxH + 12;
+}
+
 function renderDemandBlock(doc: jsPDF, d: DemandItem, x: number, y: number, w: number): number {
+
   const halfW = (w - 10) / 2;
 
   // Compute needed heights
