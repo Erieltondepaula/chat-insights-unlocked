@@ -28,6 +28,41 @@ type ExtraMedia = {
 
 type MediaAttachmentFile = { file: File; kind: AttachmentInsight["type"] };
 
+/**
+ * Extrai o nome da clínica/cliente a partir de rótulos como:
+ *   "Conversa do WhatsApp com PÓS - AMIGO FLOW - Clínica X"
+ *   "Conversa do WhatsApp com AMIGO FLOW - Clínica X.txt"
+ * Regra: ignorar tudo até (e inclusive) o último "AMIGO FLOW" e retornar
+ * o trecho após o próximo hífen. Se não houver marcador, devolve o rótulo limpo.
+ */
+function extractClientName(raw: string | null | undefined): string {
+  if (!raw) return "";
+  let s = raw.trim().replace(/\.txt$/i, "").replace(/\s+/g, " ");
+  const re = /amigo\s*flow/gi;
+  let lastIdx = -1;
+  let lastLen = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    lastIdx = m.index;
+    lastLen = m[0].length;
+  }
+  if (lastIdx >= 0) {
+    const after = s.slice(lastIdx + lastLen);
+    const dashIdx = after.search(/[-–—]/);
+    if (dashIdx >= 0) {
+      const tail = after.slice(dashIdx + 1).trim();
+      if (tail) return tail.replace(/^[-–—\s]+|[-–—\s]+$/g, "");
+    }
+  }
+  // Fallback: remove prefixos comuns
+  return s
+    .replace(/^conversa\s+do\s+whatsapp\s+com\s+/i, "")
+    .replace(/^p[oó]s\s*[-–—]\s*amigo\s*flow\s*[-–—]?\s*/i, "")
+    .replace(/^amigo\s*flow\s*[-–—]?\s*/i, "")
+    .trim();
+}
+
+
 const EXT = {
   image: ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "tiff"],
   video: ["mp4", "mov", "avi", "mkv", "3gp", "webm"],
@@ -211,7 +246,9 @@ function Index() {
 
         setStatusMessage("3/3 🤖 Rodando Auditoria Comportamental, CSAT Analítico e Sinais de Churn...");
 
-        const lastWord = (a.groupName || sourceLabel || "").trim().split(/\s+/).pop()?.toLowerCase() ?? "";
+        const rawLabel = a.groupName || sourceLabel || "";
+        const clientDisplayName = extractClientName(rawLabel) || rawLabel;
+        const lastWord = clientDisplayName.trim().split(/\s+/).pop()?.toLowerCase() ?? "";
         const gender: "o" | "a" =
           /^(clinica|clínica|dra|dra\.|sra|sra\.|recep[cç][aã]o)$/.test(lastWord) || /a$/.test(lastWord) ? "a" : "o";
         const convoText = msgs
@@ -221,7 +258,7 @@ function Index() {
           .slice(0, 24000);
         const sat = await analyzeSatisfaction({
           data: {
-            clientName: a.groupName || sourceLabel || "",
+            clientName: clientDisplayName,
             clientGender: gender,
             conversationText: convoText || "(sem texto)",
             attachmentInsights: insights.map((i) => i.summary).filter(Boolean),
@@ -238,7 +275,8 @@ function Index() {
           },
         }).catch(() => null);
         setSatisfaction(sat);
-        setDraft(buildDraft(a, sourceLabel ?? "Relatório", insights, sat));
+        setDraft(buildDraft(a, clientDisplayName || "Relatório", insights, sat));
+
         setStatusMessage(null); // Limpa mensagem após o fim
       }
     } catch (e) {
@@ -250,7 +288,7 @@ function Index() {
   }
 
   function resetDraft() {
-    if (analysis) setDraft(buildDraft(analysis, sourceLabel ?? "Relatório", attachmentInsights, satisfaction));
+    if (analysis) setDraft(buildDraft(analysis, extractClientName(sourceLabel) || sourceLabel || "Relatório", attachmentInsights, satisfaction));
   }
 
   function downloadPdf() {
