@@ -662,7 +662,9 @@ export function generatePdf(draft: ReportDraft): jsPDF {
 
   // ============ 4. DEMANDAS E DEVOLUTIVAS (blocos separados) ============
   if (draft.demands?.length) {
-    y = sectionTitle(doc, "4. Demandas do Cliente e Devolutivas do Suporte", margin, y);
+    // Reserva espaço para o título + primeiro bloco, evitando título órfão
+    const firstBlockH = estimateDemandBlockHeight(doc, draft.demands[0], contentW);
+    y = sectionTitle(doc, "4. Demandas do Cliente e Devolutivas do Suporte", margin, y, Math.min(firstBlockH + 30, 260));
     for (const d of draft.demands) {
       y = renderDemandBlock(doc, d, margin, y, contentW);
     }
@@ -671,11 +673,12 @@ export function generatePdf(draft: ReportDraft): jsPDF {
   // ============ 4B. DETALHAMENTO CRONOLOGICO DAS DEMANDAS PENDENTES ============
   const pendingDemands = (draft.demands ?? []).filter((d) => /pendente/i.test(d.status));
   if (pendingDemands.length) {
-    y = sectionTitle(doc, "4.1 Detalhamento Cronologico das Demandas Pendentes", margin, y);
+    y = sectionTitle(doc, "4.1 Detalhamento Cronologico das Demandas Pendentes", margin, y, 180);
     pendingDemands.forEach((d, idx) => {
       y = renderPendingDetail(doc, d, idx + 1, margin, y, contentW);
     });
   }
+
 
 
   if (ar) {
