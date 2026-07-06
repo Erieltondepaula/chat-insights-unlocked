@@ -246,7 +246,9 @@ function Index() {
 
         setStatusMessage("3/3 🤖 Rodando Auditoria Comportamental, CSAT Analítico e Sinais de Churn...");
 
-        const lastWord = (a.groupName || sourceLabel || "").trim().split(/\s+/).pop()?.toLowerCase() ?? "";
+        const rawLabel = a.groupName || sourceLabel || "";
+        const clientDisplayName = extractClientName(rawLabel) || rawLabel;
+        const lastWord = clientDisplayName.trim().split(/\s+/).pop()?.toLowerCase() ?? "";
         const gender: "o" | "a" =
           /^(clinica|clínica|dra|dra\.|sra|sra\.|recep[cç][aã]o)$/.test(lastWord) || /a$/.test(lastWord) ? "a" : "o";
         const convoText = msgs
@@ -256,7 +258,7 @@ function Index() {
           .slice(0, 24000);
         const sat = await analyzeSatisfaction({
           data: {
-            clientName: a.groupName || sourceLabel || "",
+            clientName: clientDisplayName,
             clientGender: gender,
             conversationText: convoText || "(sem texto)",
             attachmentInsights: insights.map((i) => i.summary).filter(Boolean),
@@ -273,7 +275,8 @@ function Index() {
           },
         }).catch(() => null);
         setSatisfaction(sat);
-        setDraft(buildDraft(a, sourceLabel ?? "Relatório", insights, sat));
+        setDraft(buildDraft(a, clientDisplayName || "Relatório", insights, sat));
+
         setStatusMessage(null); // Limpa mensagem após o fim
       }
     } catch (e) {
