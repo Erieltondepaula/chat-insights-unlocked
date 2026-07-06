@@ -1278,6 +1278,101 @@ function paragraph(doc: jsPDF, text: string, x: number, y: number, w: number, si
   return y;
 }
 
+function renderRichParagraph(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  size: number,
+  lineHeight: number,
+): number {
+  // Tokeniza em segmentos alternando normal/bold. Bold = trechos entre aspas
+  // "..." ou rotulos gerenciais (Dor:, Elogio:, Recomendacao:, etc).
+  doc.setFontSize(size);
+  doc.setTextColor(...TEXT);
+
+  type Seg = { text: string; bold: boolean };
+  const segs: Seg[] = [];
+  const quoteRe = /"([^"]{2,400})"/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = quoteRe.exec(text)) !== null) {
+    if (m.index > last) segs.push({ text: text.slice(last, m.index), bold: false });
+    segs.push({ text: `"${m[1]}"`, bold: true });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) segs.push({ text: text.slice(last), bold: false });
+  if (!segs.length) segs.push({ text, bold: false });
+
+  // Realca tambem rotulos-chave dentro de segmentos normais
+  const LABELS = /(Dor(?:es)?|Elogio(?:s)?|Recomenda[cç][aã]o|Impacto|Risco|Reincid[eê]ncia|Ganho(?:s)?|Bloqueio|A[cç][aã]o imediata|Prioridade):/gi;
+
+  // Transforma segs em tokens (palavras) preservando bold
+  type Tok = { text: string; bold: boolean; space: boolean };
+  const tokens: Tok[] = [];
+  for (const s of segs) {
+    if (s.bold) {
+      const parts = s.text.split(/(\s+)/);
+      for (const p of parts) {
+        if (!p) continue;
+        if (/^\s+$/.test(p)) tokens.push({ text: " ", bold: false, space: true });
+        else tokens.push({ text: p, bold: true, space: false });
+      }
+    } else {
+      // divide em palavras, marcando rotulos como bold
+      const parts = s.text.split(/(\s+)/);
+      for (const p of parts) {
+        if (!p) continue;
+        if (/^\s+$/.test(p)) { tokens.push({ text: " ", bold: false, space: true }); continue; }
+        // detecta rotulos "Dor:" no inicio da palavra
+        if (LABELS.test(p)) {
+          LABELS.lastIndex = 0;
+          tokens.push({ text: p, bold: true, space: false });
+        } else {
+          tokens.push({ text: p, bold: false, space: false });
+        }
+      }
+    }
+  }
+
+  const measure = (t: string, bold: boolean) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    return doc.getTextWidth(t);
+  };
+
+  // Layout linha a linha
+  let cursorX = x;
+  y = ensureSpace(doc, y, lineHeight, x);
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.space) {
+      // ignora espacos no inicio de linha
+      if (cursorX === x) continue;
+      const sw = measure(" ", false);
+      if (cursorX + sw > x + w) {
+        cursorX = x;
+        y += lineHeight;
+        y = ensureSpace(doc, y, lineHeight, x);
+        continue;
+      }
+      cursorX += sw;
+      continue;
+    }
+    const tw = measure(t.text, t.bold);
+    if (cursorX + tw > x + w && cursorX > x) {
+      cursorX = x;
+      y += lineHeight;
+      y = ensureSpace(doc, y, lineHeight, x);
+    }
+    doc.setFont("helvetica", t.bold ? "bold" : "normal");
+    doc.setTextColor(...(t.bold ? NAVY : TEXT));
+    doc.text(t.text, cursorX, y);
+    cursorX += tw;
+  }
+  return y + lineHeight;
+}
+
 function sectionTitle(doc: jsPDF, t: string, x: number, y: number, minContentAfter = 100): number {
   // Reserva espaço para o título + primeiro bloco de conteúdo,
   // evitando que o título fique órfão no fim de uma página.
