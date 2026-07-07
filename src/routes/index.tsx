@@ -581,10 +581,10 @@ function Index() {
                   ↺ Restaurar
                 </button>
                 <button
-                  onClick={downloadPdf}
+                  onClick={openPreview}
                   className="rounded-md bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
                 >
-                  ⬇️ Gerar PDF
+                  👁️ Pré-visualizar PDF
                 </button>
               </div>
             </div>
