@@ -626,12 +626,24 @@ function Index() {
           <div className="flex min-h-0 flex-1 flex-col gap-0 lg:flex-row">
             <div className="flex-1 bg-neutral-800 p-2">
               {previewUrl ? (
-                <iframe
+                <object
                   key={previewUrl}
-                  src={previewUrl}
-                  title="Prévia do PDF"
+                  data={previewUrl}
+                  type="application/pdf"
                   className="h-full w-full rounded border border-neutral-700 bg-white"
-                />
+                >
+                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-white">
+                    <p>Seu navegador não conseguiu exibir o PDF embutido.</p>
+                    <a
+                      href={previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md bg-white px-4 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
+                    >
+                      Abrir prévia em nova aba
+                    </a>
+                  </div>
+                </object>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-white/70">Gerando prévia…</div>
               )}
