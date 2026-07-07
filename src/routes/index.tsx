@@ -863,6 +863,20 @@ function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportD
           </button>
         </div>
       </Card>
+
+      <Card title="16. Resumo Consolidado do Atendimento">
+        <Field label="Texto completo (5 parágrafos, com citações do cliente)">
+          <textarea
+            className={textareaCls}
+            rows={22}
+            value={draft.consolidatedSummary}
+            onChange={(e) => set("consolidatedSummary", e.target.value)}
+          />
+        </Field>
+        <p className="mt-2 text-xs text-emerald-700/70">
+          Dica: use aspas duplas "assim" para destacar citações do cliente em negrito no PDF. Rótulos como Dor:, Elogio:, Recomendação:, Impacto:, Risco:, Reincidência: também são destacados automaticamente.
+        </p>
+      </Card>
     </div>
   );
 }
