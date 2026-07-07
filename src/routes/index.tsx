@@ -609,6 +609,16 @@ function Index() {
               >
                 ↻ Atualizar prévia
               </button>
+              {previewUrl && (
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md border border-white/40 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10"
+                >
+                  ↗ Nova aba
+                </a>
+              )}
               <button
                 onClick={downloadPdf}
                 className="rounded-md bg-white px-4 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
