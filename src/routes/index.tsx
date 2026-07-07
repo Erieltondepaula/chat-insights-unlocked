@@ -297,12 +297,13 @@ function Index() {
   function buildPreview() {
     if (!draft) return;
     const doc = generatePdf(draft);
-    const url = doc.output("bloburl") as unknown as string;
+    const blob = doc.output("blob") as Blob;
+    const url = URL.createObjectURL(blob);
     setPreviewUrl((prev) => {
       if (prev) {
         try { URL.revokeObjectURL(prev); } catch { /* noop */ }
       }
-      return String(url);
+      return url;
     });
   }
 
