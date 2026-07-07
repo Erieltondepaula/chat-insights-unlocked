@@ -291,12 +291,44 @@ function Index() {
     if (analysis) setDraft(buildDraft(analysis, extractClientName(sourceLabel) || sourceLabel || "Relatório", attachmentInsights, satisfaction));
   }
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  function buildPreview() {
+    if (!draft) return;
+    const doc = generatePdf(draft);
+    const url = doc.output("bloburl") as unknown as string;
+    setPreviewUrl((prev) => {
+      if (prev) {
+        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
+      }
+      return String(url);
+    });
+  }
+
+  function openPreview() {
+    if (!draft) return;
+    buildPreview();
+    setPreviewOpen(true);
+  }
+
+  function closePreview() {
+    setPreviewOpen(false);
+    setPreviewUrl((prev) => {
+      if (prev) {
+        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
+      }
+      return null;
+    });
+  }
+
   function downloadPdf() {
     if (!draft) return;
     const doc = generatePdf(draft);
     const fname = (draft.title || "relatorio").replace(/[^\w-]+/g, "_").slice(0, 60);
     doc.save(`${fname}.pdf`);
   }
+
 
   async function analyzeSelectedAttachments(files: MediaAttachmentFile[]): Promise<AttachmentInsight[]> {
     const selected = files.filter(({ file }) => file.size <= 8 * 1024 * 1024).slice(0, 8);
@@ -549,10 +581,10 @@ function Index() {
                   ↺ Restaurar
                 </button>
                 <button
-                  onClick={downloadPdf}
+                  onClick={openPreview}
                   className="rounded-md bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
                 >
-                  ⬇️ Gerar PDF
+                  👁️ Pré-visualizar PDF
                 </button>
               </div>
             </div>
@@ -562,10 +594,59 @@ function Index() {
         )}
       </section>
 
+      {previewOpen && draft && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-emerald-900 bg-emerald-900 px-4 py-3 text-white">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">Prévia do PDF — {draft.title}</p>
+              <p className="text-xs text-emerald-200">Edite os campos e clique em "Atualizar prévia" para ver as mudanças. Baixe quando estiver pronto.</p>
+            </div>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <button
+                onClick={buildPreview}
+                className="rounded-md border border-emerald-300 bg-emerald-800 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                ↻ Atualizar prévia
+              </button>
+              <button
+                onClick={downloadPdf}
+                className="rounded-md bg-white px-4 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
+              >
+                ⬇️ Baixar PDF
+              </button>
+              <button
+                onClick={closePreview}
+                className="rounded-md border border-white/40 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-0 lg:flex-row">
+            <div className="flex-1 bg-neutral-800 p-2">
+              {previewUrl ? (
+                <iframe
+                  key={previewUrl}
+                  src={previewUrl}
+                  title="Prévia do PDF"
+                  className="h-full w-full rounded border border-neutral-700 bg-white"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-white/70">Gerando prévia…</div>
+              )}
+            </div>
+            <div className="max-h-[45vh] w-full overflow-y-auto bg-white p-4 lg:max-h-none lg:w-[420px] lg:border-l lg:border-emerald-200">
+              <Editor draft={draft} onChange={setDraft} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <footer className="border-t border-emerald-100 bg-white/60 py-6 text-center text-xs text-emerald-700/70">
         Os arquivos são processados localmente no seu navegador.
       </footer>
     </main>
+
   );
 }
 
