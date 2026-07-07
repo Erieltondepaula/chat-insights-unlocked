@@ -291,12 +291,44 @@ function Index() {
     if (analysis) setDraft(buildDraft(analysis, extractClientName(sourceLabel) || sourceLabel || "Relatório", attachmentInsights, satisfaction));
   }
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  function buildPreview() {
+    if (!draft) return;
+    const doc = generatePdf(draft);
+    const url = doc.output("bloburl") as unknown as string;
+    setPreviewUrl((prev) => {
+      if (prev) {
+        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
+      }
+      return String(url);
+    });
+  }
+
+  function openPreview() {
+    if (!draft) return;
+    buildPreview();
+    setPreviewOpen(true);
+  }
+
+  function closePreview() {
+    setPreviewOpen(false);
+    setPreviewUrl((prev) => {
+      if (prev) {
+        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
+      }
+      return null;
+    });
+  }
+
   function downloadPdf() {
     if (!draft) return;
     const doc = generatePdf(draft);
     const fname = (draft.title || "relatorio").replace(/[^\w-]+/g, "_").slice(0, 60);
     doc.save(`${fname}.pdf`);
   }
+
 
   async function analyzeSelectedAttachments(files: MediaAttachmentFile[]): Promise<AttachmentInsight[]> {
     const selected = files.filter(({ file }) => file.size <= 8 * 1024 * 1024).slice(0, 8);
