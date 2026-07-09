@@ -717,7 +717,31 @@ function Index() {
   );
 }
 
+function ExecutiveNote({ draft }: { draft: ExecutiveDraft }) {
+  return (
+    <div className="space-y-4 text-sm text-emerald-900">
+      <div>
+        <h3 className="text-base font-bold">Modo Executivo</h3>
+        <p className="text-xs text-emerald-800/70">
+          Relatório enxuto de 3-5 páginas gerado automaticamente a partir da análise da IA. Para editar campos manualmente, alterne para o modo Completo.
+        </p>
+      </div>
+      <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs">
+        <p><strong>Cliente:</strong> {draft.clientName}</p>
+        <p><strong>Período:</strong> {draft.period}</p>
+        <p><strong>Status da conta:</strong> {draft.accountStatus}</p>
+        <p><strong>Score:</strong> {draft.dashboard.score}/100 · <strong>Churn:</strong> {draft.dashboard.churnRisk}</p>
+        <p><strong>Demandas:</strong> {draft.dashboard.total} ({draft.dashboard.resolvidas} resolvidas · {draft.dashboard.pendentes} pendentes)</p>
+      </div>
+      <p className="text-xs text-emerald-800/70">
+        Estrutura: Dashboard Executivo · Principais Ocorrências · Análise Inteligente · Saúde da Conta · Plano de Ação · Conclusão Executiva.
+      </p>
+    </div>
+  );
+}
+
 function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportDraft) => void }) {
+
   const set = <K extends keyof ReportDraft>(k: K, v: ReportDraft[K]) => onChange({ ...draft, [k]: v });
 
   return (
