@@ -4,6 +4,7 @@ import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
 import { analyzeSatisfaction, DEFAULT_SATISFACTION_SYSTEM_PROMPT, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
 import { buildDraft, generatePdf, type AttachmentInsight, type ReportDraft } from "@/lib/pdf-report";
+import { buildExecutiveDraft, generateExecutivePdf, type ExecutiveDraft } from "@/lib/pdf-executive-report";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -293,22 +294,38 @@ function Index() {
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [executiveMode, setExecutiveMode] = useState<boolean>(true);
+
+  const executiveDraft = useMemo<ExecutiveDraft | null>(() => {
+    if (!analysis) return null;
+    const name = extractClientName(sourceLabel) || sourceLabel || analysis.groupName || "Relatório";
+    return buildExecutiveDraft(analysis, name, satisfaction);
+  }, [analysis, satisfaction, sourceLabel]);
 
   function buildPreview() {
+    if (executiveMode) {
+      if (!executiveDraft) return;
+      const doc = generateExecutivePdf(executiveDraft);
+      const blob = doc.output("blob") as Blob;
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl((prev) => {
+        if (prev) { try { URL.revokeObjectURL(prev); } catch { /* noop */ } }
+        return url;
+      });
+      return;
+    }
     if (!draft) return;
     const doc = generatePdf(draft);
     const blob = doc.output("blob") as Blob;
     const url = URL.createObjectURL(blob);
     setPreviewUrl((prev) => {
-      if (prev) {
-        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
-      }
+      if (prev) { try { URL.revokeObjectURL(prev); } catch { /* noop */ } }
       return url;
     });
   }
 
   function openPreview() {
-    if (!draft) return;
+    if (executiveMode ? !executiveDraft : !draft) return;
     buildPreview();
     setPreviewOpen(true);
   }
@@ -316,19 +333,25 @@ function Index() {
   function closePreview() {
     setPreviewOpen(false);
     setPreviewUrl((prev) => {
-      if (prev) {
-        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
-      }
+      if (prev) { try { URL.revokeObjectURL(prev); } catch { /* noop */ } }
       return null;
     });
   }
 
   function downloadPdf() {
+    if (executiveMode && executiveDraft) {
+      const doc = generateExecutivePdf(executiveDraft);
+      const fname = (executiveDraft.title || "relatorio-executivo").replace(/[^\w-]+/g, "_").slice(0, 60);
+      doc.save(`${fname}.pdf`);
+      return;
+    }
     if (!draft) return;
     const doc = generatePdf(draft);
     const fname = (draft.title || "relatorio").replace(/[^\w-]+/g, "_").slice(0, 60);
     doc.save(`${fname}.pdf`);
   }
+
+
 
 
   async function analyzeSelectedAttachments(files: MediaAttachmentFile[]): Promise<AttachmentInsight[]> {
@@ -595,20 +618,41 @@ function Index() {
         )}
       </section>
 
-      {previewOpen && draft && (
+      {previewOpen && (draft || executiveDraft) && (
         <div className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm">
           <div className="flex items-center justify-between gap-3 border-b border-emerald-900 bg-emerald-900 px-4 py-3 text-white">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">Prévia do PDF — {draft.title}</p>
-              <p className="text-xs text-emerald-200">Edite os campos e clique em "Atualizar prévia" para ver as mudanças. Baixe quando estiver pronto.</p>
+              <p className="truncate text-sm font-semibold">
+                Prévia do PDF — {executiveMode ? executiveDraft?.title : draft?.title}
+              </p>
+              <p className="text-xs text-emerald-200">
+                {executiveMode
+                  ? "Modo Executivo (3-5 páginas). Alterne para Completo para o relatório detalhado."
+                  : "Modo Completo (relatório detalhado com todas as seções e anexos)."}
+              </p>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
+              <div className="flex overflow-hidden rounded-md border border-emerald-300 text-[11px] font-semibold">
+                <button
+                  onClick={() => { setExecutiveMode(true); setTimeout(buildPreview, 0); }}
+                  className={`px-2.5 py-2 ${executiveMode ? "bg-white text-emerald-900" : "bg-emerald-800 text-white hover:bg-emerald-700"}`}
+                >
+                  Executivo
+                </button>
+                <button
+                  onClick={() => { setExecutiveMode(false); setTimeout(buildPreview, 0); }}
+                  className={`px-2.5 py-2 ${!executiveMode ? "bg-white text-emerald-900" : "bg-emerald-800 text-white hover:bg-emerald-700"}`}
+                >
+                  Completo
+                </button>
+              </div>
               <button
                 onClick={buildPreview}
                 className="rounded-md border border-emerald-300 bg-emerald-800 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
               >
                 ↻ Atualizar prévia
               </button>
+
               {previewUrl && (
                 <a
                   href={previewUrl}
@@ -648,8 +692,19 @@ function Index() {
             </div>
 
             <div className="max-h-[45vh] w-full overflow-y-auto bg-white p-4 lg:max-h-none lg:w-[420px] lg:border-l lg:border-emerald-200">
-              <Editor draft={draft} onChange={setDraft} />
+              {executiveMode ? (
+                executiveDraft ? (
+                  <ExecutiveNote draft={executiveDraft} />
+                ) : (
+                  <p className="text-sm text-emerald-800/70">Gerando resumo executivo…</p>
+                )
+              ) : draft ? (
+                <Editor draft={draft} onChange={setDraft} />
+              ) : (
+                <p className="text-sm text-emerald-800/70">Rode uma análise primeiro.</p>
+              )}
             </div>
+
           </div>
         </div>
       )}
@@ -662,7 +717,31 @@ function Index() {
   );
 }
 
+function ExecutiveNote({ draft }: { draft: ExecutiveDraft }) {
+  return (
+    <div className="space-y-4 text-sm text-emerald-900">
+      <div>
+        <h3 className="text-base font-bold">Modo Executivo</h3>
+        <p className="text-xs text-emerald-800/70">
+          Relatório enxuto de 3-5 páginas gerado automaticamente a partir da análise da IA. Para editar campos manualmente, alterne para o modo Completo.
+        </p>
+      </div>
+      <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs">
+        <p><strong>Cliente:</strong> {draft.clientName}</p>
+        <p><strong>Período:</strong> {draft.period}</p>
+        <p><strong>Status da conta:</strong> {draft.accountStatus}</p>
+        <p><strong>Score:</strong> {draft.dashboard.score}/100 · <strong>Churn:</strong> {draft.dashboard.churnRisk}</p>
+        <p><strong>Demandas:</strong> {draft.dashboard.total} ({draft.dashboard.resolvidas} resolvidas · {draft.dashboard.pendentes} pendentes)</p>
+      </div>
+      <p className="text-xs text-emerald-800/70">
+        Estrutura: Dashboard Executivo · Principais Ocorrências · Análise Inteligente · Saúde da Conta · Plano de Ação · Conclusão Executiva.
+      </p>
+    </div>
+  );
+}
+
 function Editor({ draft, onChange }: { draft: ReportDraft; onChange: (d: ReportDraft) => void }) {
+
   const set = <K extends keyof ReportDraft>(k: K, v: ReportDraft[K]) => onChange({ ...draft, [k]: v });
 
   return (
