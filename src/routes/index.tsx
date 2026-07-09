@@ -4,6 +4,7 @@ import { analyze, parseWhatsApp, type Analysis } from "@/lib/whatsapp-parser";
 import { analyzeAttachments } from "@/lib/attachment-analysis.functions";
 import { analyzeSatisfaction, DEFAULT_SATISFACTION_SYSTEM_PROMPT, type SatisfactionAnalysis } from "@/lib/satisfaction-analysis.functions";
 import { buildDraft, generatePdf, type AttachmentInsight, type ReportDraft } from "@/lib/pdf-report";
+import { buildExecutiveDraft, generateExecutivePdf, type ExecutiveDraft } from "@/lib/pdf-executive-report";
 
 export const Route = createFileRoute("/")({
   head: () => ({
