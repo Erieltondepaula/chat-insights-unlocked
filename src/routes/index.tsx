@@ -618,20 +618,41 @@ function Index() {
         )}
       </section>
 
-      {previewOpen && draft && (
+      {previewOpen && (draft || executiveDraft) && (
         <div className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm">
           <div className="flex items-center justify-between gap-3 border-b border-emerald-900 bg-emerald-900 px-4 py-3 text-white">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">Prévia do PDF — {draft.title}</p>
-              <p className="text-xs text-emerald-200">Edite os campos e clique em "Atualizar prévia" para ver as mudanças. Baixe quando estiver pronto.</p>
+              <p className="truncate text-sm font-semibold">
+                Prévia do PDF — {executiveMode ? executiveDraft?.title : draft?.title}
+              </p>
+              <p className="text-xs text-emerald-200">
+                {executiveMode
+                  ? "Modo Executivo (3-5 páginas). Alterne para Completo para o relatório detalhado."
+                  : "Modo Completo (relatório detalhado com todas as seções e anexos)."}
+              </p>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
+              <div className="flex overflow-hidden rounded-md border border-emerald-300 text-[11px] font-semibold">
+                <button
+                  onClick={() => { setExecutiveMode(true); setTimeout(buildPreview, 0); }}
+                  className={`px-2.5 py-2 ${executiveMode ? "bg-white text-emerald-900" : "bg-emerald-800 text-white hover:bg-emerald-700"}`}
+                >
+                  Executivo
+                </button>
+                <button
+                  onClick={() => { setExecutiveMode(false); setTimeout(buildPreview, 0); }}
+                  className={`px-2.5 py-2 ${!executiveMode ? "bg-white text-emerald-900" : "bg-emerald-800 text-white hover:bg-emerald-700"}`}
+                >
+                  Completo
+                </button>
+              </div>
               <button
                 onClick={buildPreview}
                 className="rounded-md border border-emerald-300 bg-emerald-800 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
               >
                 ↻ Atualizar prévia
               </button>
+
               {previewUrl && (
                 <a
                   href={previewUrl}
