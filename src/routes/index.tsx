@@ -692,8 +692,19 @@ function Index() {
             </div>
 
             <div className="max-h-[45vh] w-full overflow-y-auto bg-white p-4 lg:max-h-none lg:w-[420px] lg:border-l lg:border-emerald-200">
-              <Editor draft={draft} onChange={setDraft} />
+              {executiveMode ? (
+                executiveDraft ? (
+                  <ExecutiveNote draft={executiveDraft} />
+                ) : (
+                  <p className="text-sm text-emerald-800/70">Gerando resumo executivo…</p>
+                )
+              ) : draft ? (
+                <Editor draft={draft} onChange={setDraft} />
+              ) : (
+                <p className="text-sm text-emerald-800/70">Rode uma análise primeiro.</p>
+              )}
             </div>
+
           </div>
         </div>
       )}
