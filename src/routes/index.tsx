@@ -294,22 +294,38 @@ function Index() {
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [executiveMode, setExecutiveMode] = useState<boolean>(true);
+
+  const executiveDraft = useMemo<ExecutiveDraft | null>(() => {
+    if (!analysis) return null;
+    const name = extractClientName(sourceLabel) || sourceLabel || analysis.groupName || "Relatório";
+    return buildExecutiveDraft(analysis, name, satisfaction);
+  }, [analysis, satisfaction, sourceLabel]);
 
   function buildPreview() {
+    if (executiveMode) {
+      if (!executiveDraft) return;
+      const doc = generateExecutivePdf(executiveDraft);
+      const blob = doc.output("blob") as Blob;
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl((prev) => {
+        if (prev) { try { URL.revokeObjectURL(prev); } catch { /* noop */ } }
+        return url;
+      });
+      return;
+    }
     if (!draft) return;
     const doc = generatePdf(draft);
     const blob = doc.output("blob") as Blob;
     const url = URL.createObjectURL(blob);
     setPreviewUrl((prev) => {
-      if (prev) {
-        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
-      }
+      if (prev) { try { URL.revokeObjectURL(prev); } catch { /* noop */ } }
       return url;
     });
   }
 
   function openPreview() {
-    if (!draft) return;
+    if (executiveMode ? !executiveDraft : !draft) return;
     buildPreview();
     setPreviewOpen(true);
   }
@@ -317,19 +333,25 @@ function Index() {
   function closePreview() {
     setPreviewOpen(false);
     setPreviewUrl((prev) => {
-      if (prev) {
-        try { URL.revokeObjectURL(prev); } catch { /* noop */ }
-      }
+      if (prev) { try { URL.revokeObjectURL(prev); } catch { /* noop */ } }
       return null;
     });
   }
 
   function downloadPdf() {
+    if (executiveMode && executiveDraft) {
+      const doc = generateExecutivePdf(executiveDraft);
+      const fname = (executiveDraft.title || "relatorio-executivo").replace(/[^\w-]+/g, "_").slice(0, 60);
+      doc.save(`${fname}.pdf`);
+      return;
+    }
     if (!draft) return;
     const doc = generatePdf(draft);
     const fname = (draft.title || "relatorio").replace(/[^\w-]+/g, "_").slice(0, 60);
     doc.save(`${fname}.pdf`);
   }
+
+
 
 
   async function analyzeSelectedAttachments(files: MediaAttachmentFile[]): Promise<AttachmentInsight[]> {
